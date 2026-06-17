@@ -1,0 +1,72 @@
+# SatsangAI — Counseling Core manifest
+#
+# The curated subset of the KB used as (a) the default counseling retrieval index
+# and (b) the FIRST enrichment target. NOT the full 231,940-row corpus, which is
+# skewed to Sanskrit narrative (itihasa/Mahabharata/Valmiki) and would flood
+# problem-first counseling with narrative verse.
+#
+# Selection rules (from satsangAI/CLAUDE.md):
+#   - Home tradition (Swaminarayan / Akshar-Purushottam) in FULL — small + highest value.
+#   - Counseling-relevant shared_hindu: Gita (+ a Gita commentary), principal
+#     Upanishads, Yoga Sutras, practical niti. Exclude narrative bulk.
+#   - The acharya-school bhashyas (advaita/vishishtadvaita/dvaita/shuddhadvaita) are
+#     EXCLUDED here: "never mix schools in counseling; full breadth only in Shastrarth
+#     mode." They are a separate, later enrichment tier (shastrarth_breadth).
+#
+# Measured against satsangai/data/parquet/corpus.parquet (2026-06): 231,940 rows total.
+# Counseling core = 17,808 rows (7.7%).
+#   by tradition: swaminarayan 14,257 · shared_hindu 3,551
+#   all 17,808 are verified=True (quotable).
+#   translation present on only 2,476 rows -> the enricher must read the ORIGINAL
+#     directly for the other 15,332 (lang_original: gu 8,771 · en 7,077 · sa 1,960).
+#   14,257 rows (all swaminarayan) require the gujarati_explanation field.
+
+version: 1
+measured_against: satsangai/data/parquet/corpus.parquet
+total_corpus_rows: 231940
+core_rows: 17808
+
+# Tier 1 — the default counseling index + first enrichment pass.
+core:
+  # Entire home tradition (by `tradition` column), regardless of source.
+  traditions:
+    - swaminarayan        # 14,257 rows — Vachanamrut, Swamini Vato, Satsang Diksha,
+                          #   Shikshapatri, Bhaktachintamani, Harililamrut, sw_lit_*, etc.
+  # Explicit shared_hindu sources (by `source` column).
+  sources:
+    - bhagavad_gita             # 719   — primary counseling scripture
+    - upanishads                # 1,938 — principal Upanishads
+    - yoga_sutras               # 195   — Patanjali, practical sadhana
+    - subbarao_gita_commentary  # 380   — Gita commentary (application-oriented)
+    - chanakya_niti             # 319   — practical worldly ethics / niti
+
+# Tier 2 — "widen when thin": pulled in only when Tier 1 retrieval is sparse.
+# Enriched after the core. Devotional/narrative but counseling-usable.
+widen_when_thin:
+  sources:
+    - ramcharitmanas            # 2,247 — devotional moral narrative
+    - srimad_bhagavatam         # 12,796 — philosophical purport amid narrative
+    - vivekachudamani           # 335   — practical Advaita sadhana (school-tagged)
+
+# Tier 3 — Shastrarth mode ONLY (full philosophical breadth; never in counseling).
+# Separate enrichment tier; do not mix into counseling retrieval.
+shastrarth_breadth:
+  sources:
+    - shankara_brahmasutra_bhashya
+    - ramanuja_sribhashya
+    - ramanuja_gita_bhashya
+    - ramanuja_gadya_traya
+    - vedartha_sangraha
+    - vallabha_anubhashya
+    - madhva_chandogya_bhashya
+
+# Explicitly EXCLUDED from all enrichment/counseling (Sanskrit narrative + Vedic
+# ritual bulk). Retrieval-only via full corpus if ever needed.
+excluded_narrative:
+  - itihasa
+  - mahabharata
+  - valmiki_ramayana
+  - vishnu_purana
+  - rigveda
+  - yajurveda
+  - atharvaveda

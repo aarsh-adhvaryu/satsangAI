@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+.DS_Store
+
+# Large / regenerable model + enrichment artifacts (NOT the gold seed, which is
+# expensive to regenerate and kept under version control)
+enrichment/data/*-lora/
+enrichment/data/gemma4-enrich-lora/
+enrichment/data/enriched*.parquet
+enrichment/data/*.f32
+*.safetensors
