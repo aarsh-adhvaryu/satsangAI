@@ -63,8 +63,9 @@ def main() -> None:
     model = AutoModelForCausalLM.from_pretrained(
         BASE, dtype=torch.bfloat16, device_map="cuda", experts_implementation="eager")
     model = PeftModel.from_pretrained(model, str(ADAPTER))
+    model = model.merge_and_unload()    # fold LoRA into base weights -> faster inference
     model.eval()
-    print(f"model+adapter loaded | GPU {torch.cuda.memory_allocated()/1e9:.1f} GB")
+    print(f"model+adapter merged | GPU {torch.cuda.memory_allocated()/1e9:.1f} GB")
 
     rows = core.to_dict("records")
     t0, n_ok, n_bad = time.time(), 0, 0
