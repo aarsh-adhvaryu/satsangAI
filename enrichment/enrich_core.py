@@ -33,6 +33,14 @@ OUT = Path("enrichment/data/enriched_core.jsonl")
 COLS = ["id", "source", "tradition", "text_type", "citation", "ref", "lang_original",
         "original", "transliteration", "translation", "word_meanings", "commentaries"]
 
+# Highest counseling value first — so limited GPU budget enriches these before the
+# long narrative/biography tail. Anything not listed sorts after, in corpus order.
+PRIORITY = ("vachanamrut", "swamini_vato", "satsang_diksha", "shikshapatri",
+            "bhagavad_gita", "upanishads", "yoga_sutras", "satsangijivanam",
+            "bhaktachintamani", "harililamrut", "aksharamrutam", "janmangal_namavali",
+            "nishkulanand_kavya", "swaminarayan_bhashyam", "subbarao_gita_commentary",
+            "chanakya_niti")
+
 
 def parse_json(raw: str) -> dict:
     try:
@@ -47,11 +55,18 @@ def main() -> None:
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--max-new-tokens", type=int, default=700)
     ap.add_argument("--limit", type=int, default=None, help="benchmark on first N rows")
+    ap.add_argument("--priority", action="store_true",
+                    help="enrich highest-value counseling sources first")
     args = ap.parse_args()
 
     core = select_core(pd.read_parquet(CORPUS, columns=COLS))
     done = {json.loads(l)["id"] for l in OUT.read_text().splitlines()} if OUT.exists() else set()
     core = core[~core["id"].astype(str).isin(done)]
+    if args.priority:
+        rank = {s: i for i, s in enumerate(PRIORITY)}
+        core = core.assign(_p=core["source"].map(lambda s: rank.get(s, len(PRIORITY)))) \
+                   .sort_values("_p", kind="stable").drop(columns="_p")
+        print("priority order: enriching", ", ".join(PRIORITY[:5]), "... first")
     if args.limit:
         core = core.head(args.limit)
     print(f"to enrich: {len(core)} rows (already done: {len(done)})")
