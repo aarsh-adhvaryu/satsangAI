@@ -57,10 +57,21 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=None, help="benchmark on first N rows")
     ap.add_argument("--priority", action="store_true",
                     help="enrich highest-value counseling sources first")
+    ap.add_argument("--retry-bad", action="store_true",
+                    help="drop already-written rows that are missing core fields so they "
+                         "get re-attempted (pair with a larger --max-new-tokens)")
     args = ap.parse_args()
 
     core = select_core(pd.read_parquet(CORPUS, columns=COLS))
-    done = {json.loads(l)["id"] for l in OUT.read_text().splitlines()} if OUT.exists() else set()
+    written = [json.loads(l) for l in OUT.read_text().splitlines()] if OUT.exists() else []
+    if args.retry_bad:
+        good = [r for r in written if all(r.get(k) for k in FIELDS[:3])]
+        with open(OUT, "w") as f:
+            for r in good:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        print(f"retry-bad: kept {len(good)} valid, dropped {len(written)-len(good)} for re-do")
+        written = good
+    done = {str(r["id"]) for r in written}
     core = core[~core["id"].astype(str).isin(done)]
     if args.priority:
         rank = {s: i for i, s in enumerate(PRIORITY)}
