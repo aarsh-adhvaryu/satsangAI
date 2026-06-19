@@ -72,9 +72,13 @@ safety classifier (deterministic, first) → understand+plan (1 Claude JSON call
 → verify citations (regex extract + Postgres existence check; no LLM)
 ```
 
-## Enrichment pipeline — STATUS (2026-06, in progress)
-Build order: **V1 (Claude + RAG) first; V2 (Gemma) parallel.** Currently building the
-enrichment layer (the proposal's primary retrieval target). Decisions locked with the
+## Enrichment pipeline — DONE + SHIPPED (2026-06)
+**The enrichment layer is complete and live on HuggingFace** (`aarsh-adhvaryu/satsangai-kb`,
+private). 17,804 / 17,808 counseling-core rows now carry the 4 enrichment fields +
+enrichment-based BGE-M3 embeddings; pushed end-to-end. See "What's done / next / AUDIT" below.
+
+Build order: **V1 (Claude + RAG) first; V2 (Gemma) parallel.** The enrichment layer is
+the proposal's primary retrieval target. Decisions locked with the
 owner: **quality over speed/cost**; enrichment model = **Gemma 4 26B MoE**
 (`google/gemma-4-26B-A4B-it`, Apache-2.0), QLoRA-tuned; tuning gold = Claude (Opus 4.8)
 generated **offline only** — runtime enrichment stays Gemma-only so the shared KB stays
@@ -92,17 +96,46 @@ Code lives in `config/` + `enrichment/` (this repo, the app layer):
   core fields filled, Gujarati on all 1,300 swaminarayan rows.** (~<$20 of API spend.)
 - `enrichment/baseline_smoke.py` — un-tuned Gemma baseline (already faithful + multilingual).
 - `enrichment/qlora_train.py` — 4-bit bnb + LoRA r16 on the 210 language_model attn+MLP
-  `Linear4bit` targets, completion-only loss. **Validated** (smoke passed). NOT yet run for real.
-- `enrichment/watch_gold.py` — live batch/gold monitor.
+  `Linear4bit` targets, completion-only loss. **DONE: 3 epochs, train_loss → ~1.0; adapter
+  at `data/gemma4-enrich-lora/`** (gitignored, on the Studio disk).
+- `enrichment/enrich_core.py` — bulk enrichment (merges LoRA, batched, eager MoE, resumable;
+  flags `--batch`, `--priority`, `--retry-bad`, `--max-new-tokens`). **DONE: 17,804/17,808
+  rows in `data/enriched_core.jsonl`.** Tip: `--batch 48` ~tripled throughput.
+- `enrichment/embed_core.py` — BGE-M3 embed on `contextual_explanation + when_this_helps`
+  (1024-d unit-norm). **DONE: `data/enriched_core.parquet`** (gitignored; ~35s on GPU).
+- `enrichment/writeback_kb.py` — backs up + writes the 4 fields + new vectors into KB
+  `corpus.parquet` + `embeddings.f32`. **DONE (applied; `.pre_enrich.bak` backups exist).**
+- `enrichment/watch_gold.py` — live batch/gold monitor (used during gold gen).
 
-**NEXT (all need the GPU ON; paused here by owner to avoid idle GPU credits):**
-1. `python -m enrichment.qlora_train --epochs 3` (~2–3 h).
-2. Benchmark batched enrich throughput, then bulk-enrich the **full 17,808 core** via
-   **transformers** (not vLLM — reliable on Blackwell; no install gamble). Wire the result
-   into KB `../satsangai/pipeline/enrich.py`'s `local` backend.
-3. Re-embed enriched rows on `contextual_explanation + when_this_helps` (BGE-M3), write
-   back to the KB, hot-swap the retrieval index, push to private HF.
-4. V1 backend (FastAPI pipeline above) in parallel; upgrade to enriched embeddings when ready.
+### What's DONE (A1→A4, all shipped)
+1. Counseling core defined (17,808). 2. Claude (Opus 4.8) gold seed 1,490/1,490, offline only.
+3. QLoRA-tuned Gemma 4 26B MoE on the gold. 4. Enriched 17,804/17,808 rows (99.98%), embedded,
+written back into the KB, **pushed to private HF** (`push_hf` must be run by the human — the
+harness blocks the bulk external upload for the agent).
+
+### What's NEXT
+1. **AUDIT the shipped enrichment** (deferred by owner — see below) before relying on it for V1.
+2. **V1 backend** — scaffold the FastAPI pipeline (safety → understand+plan → BGE-M3 retrieve
+   over the counseling core + Postgres exact lookup + rerank → Claude Sonnet 4.6 generate →
+   deterministic citation verify). Load the enriched KB from HF.
+3. **V2 later** — QLoRA + **DPO** the *generation* Gemma on preference pairs (much of it
+   collected from V1 usage). Enrichment did NOT use DPO (gold-target SFT task; DPO is for persona).
+4. Enrich the widen/shastrarth tiers + the 4 null rows if/when wanted (optional).
+
+### AUDIT — deferred, do before trusting V1 retrieval (owner said "audit later")
+- **Quality spot-check** the enrichment beyond the priority rows: sample per tradition/source
+  (esp. the long sw_lit biography tail done late in the run) for faithfulness, no invented
+  doctrine, accurate Gujarati. Baseline + gold were strong; the tail is unaudited.
+- **4 null rows** (`vachanamrut_166` + 3 sw_lit chunks) — deterministic JSON failures, left
+  retrieval-only; repair or accept.
+- **Retrieval lift** — measure problem-first retrieval before vs after enrichment (does a
+  counseling query now surface better passages?). The old embeddings are in the `.pre_enrich.bak`.
+- **Provenance / V2 purity** — enrichment is Gemma-generated but the adapter was QLoRA-tuned on
+  **Claude-Opus gold**, so it's *Claude-bootstrapped*. Runtime stays Gemma-only (claim intact);
+  if strict "never-Claude" V2 purity is later required, regenerate with a non-Claude-gold adapter
+  (fully reversible — source text untouched, KB `.pre_enrich.bak` backups kept).
+- **KB repo CLAUDE.md** (`../satsangai/CLAUDE.md`) still says "enrichment NOT done" — now stale;
+  update it (that repo is on branch `kb-integrity-remediation`).
 
 ## Environment / gotchas
 - GPU box (RTX PRO 6000 **Blackwell**, 96 GB). HF token cached in `$HF_HOME`.
