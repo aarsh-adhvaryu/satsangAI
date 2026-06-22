@@ -13,3 +13,4 @@ enrichment/data/*.f32
 
 # V1 API build artifacts (rebuildable from KB)
 api/data/*.parquet
+api/data/memory/

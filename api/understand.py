@@ -45,11 +45,17 @@ def _client():
     return anthropic.Anthropic()
 
 
-def understand(message: str) -> dict:
+def understand(message: str, history: list[dict] | None = None) -> dict:
+    ctx = ""
+    if history:
+        ctx = ("Recent conversation (for context):\n"
+               + "\n".join(f"{h['role']}: {h['text'][:300]}" for h in history)
+               + "\n\n")
+    content = f"{ctx}Latest message to analyze:\n{message}"
     resp = _client().messages.create(
         model=config.PLAN_MODEL, max_tokens=600,
         system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": message}],
+        messages=[{"role": "user", "content": content}],
         output_config={"format": {"type": "json_schema", "schema": SCHEMA}},
     )
     text = next((b.text for b in resp.content if b.type == "text"), "{}")

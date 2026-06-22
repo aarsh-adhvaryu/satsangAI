@@ -43,14 +43,21 @@ def _client():
     return anthropic.Anthropic()
 
 
-def stream_reply(message: str, plan: dict, passages: list[Passage]):
+def stream_reply(message: str, plan: dict, passages: list[Passage],
+                 history: list[dict] | None = None, facts: list[str] | None = None):
     """Yield response text chunks. plan is the understand() dict."""
-    user = (f"The person wrote:\n\"{message}\"\n\n"
+    mem = f"What you remember about this person: {'; '.join(facts)}\n\n" if facts else ""
+    convo = ""
+    if history:
+        convo = ("Recent conversation so far:\n"
+                 + "\n".join(f"{h['role']}: {h['text'][:400]}" for h in history) + "\n\n")
+    user = (f"{mem}{convo}The person wrote:\n\"{message}\"\n\n"
             f"Their underlying problem: {plan.get('problem_summary','')}\n"
             f"Felt emotion: {plan.get('primary_emotion','')}\n"
             f"How to help: {plan.get('response_plan','')}\n\n"
             f"PASSAGES (cite only these, by tag):\n{_passages_block(passages)}\n\n"
-            f"Respond to the person now as the saint-companion.")
+            f"Respond to the person now as the saint-companion. If there is recent "
+            f"conversation, continue it naturally — don't repeat yourself.")
     with _client().messages.stream(
         model=config.GEN_MODEL, max_tokens=1024,
         system=[{"type": "text", "text": PERSONA, "cache_control": {"type": "ephemeral"}}],
