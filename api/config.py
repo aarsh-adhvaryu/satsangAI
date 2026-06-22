@@ -26,10 +26,10 @@ RERANK = os.environ.get("SATSANG_RERANK", "1") != "0"               # cross-enco
 # Stronger zero-hallucination, but non-streaming + 1-2 extra LLM calls. Off by default.
 FAITHFULNESS_GUARD = os.environ.get("SATSANG_FAITHFULNESS_GUARD", "0") == "1"
 
-# Crisis helplines in api/safety.py are PLACEHOLDERS. A human MUST verify every number
-# (and add region-appropriate lines) and set SATSANG_HELPLINES_VERIFIED=1 before any
-# real/production use. The app warns loudly at startup while this is False.
-CRISIS_HELPLINES_VERIFIED = os.environ.get("SATSANG_HELPLINES_VERIFIED", "0") == "1"
+# Crisis helplines in api/safety.py: India-core set human-verified 2026-06. Regional/
+# Gujarat-specific and additional diaspora lines still to be added later. Set to "0" to
+# re-enable the startup warning if the lines are edited and need re-verification.
+CRISIS_HELPLINES_VERIFIED = os.environ.get("SATSANG_HELPLINES_VERIFIED", "1") == "1"
 GEN_MODEL = os.environ.get("SATSANG_GEN_MODEL", "claude-sonnet-4-6")  # saint generation
 PLAN_MODEL = os.environ.get("SATSANG_PLAN_MODEL", "claude-sonnet-4-6")  # understand+plan JSON
 EMBED_DEVICE = os.environ.get("SATSANG_EMBED_DEVICE", "cpu")          # cpu fine for single queries

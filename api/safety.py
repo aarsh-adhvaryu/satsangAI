@@ -6,8 +6,9 @@ helpline; a missed one is dangerous).
 On a crisis hit the pipeline short-circuits to a STATIC, human-reviewed response with
 verified helplines — the LLM is never consulted.
 
-⚠️ HELPLINE NUMBERS BELOW ARE PLACEHOLDERS PENDING HUMAN VERIFICATION before any
-production use (proposal requires "verified helplines").
+Helplines: India-core set, human-verified 2026-06 (Tele-MANAS, KIRAN, Vandrevala,
+Women Helpline, NCW, CHILDLINE, emergency 112) + a global directory for diaspora users.
+Regional/Gujarat-specific and additional diaspora lines to be added later.
 """
 from __future__ import annotations
 
@@ -43,23 +44,38 @@ _PATTERNS: dict[str, list[str]] = {
 _COMPILED = {cat: [re.compile(p, re.I) for p in pats] for cat, pats in _PATTERNS.items()}
 
 # Static, human-reviewed responses. Keep warm + brief; lead with care, give the line.
-_HELP = (
-    "If you are in India, you can reach the KIRAN mental-health helpline at "
-    "1800-599-0019 (24x7), or Vandrevala Foundation at 1860-2662-345. "
-    "If you are elsewhere, please contact your local emergency number or a crisis line "
-    "right away."  # ⚠️ VERIFY before production
-)
+_DIRECTORY = ("\nIf you are outside India, please find a local crisis line at "
+              "findahelpline.com or befrienders.org, or call your local emergency number.")
+
+_MENTAL_HEALTH_LINES = (
+    "Please talk to someone right now. In India you can reach (free, 24x7):\n"
+    "• Tele-MANAS (national mental health): 14416\n"
+    "• KIRAN: 1800-599-0019\n"
+    "• Vandrevala Foundation: 1860-2662-345" + _DIRECTORY)
+
+_ABUSE_LINES = (
+    "You deserve to be safe. In India you can reach:\n"
+    "• Women Helpline (national): 181\n"
+    "• National Commission for Women (WhatsApp): 7827-170-170\n"
+    "• Childline (if a child is at risk): 1098\n"
+    "• Emergency: 112" + _DIRECTORY)
+
+_VIOLENCE_LINES = ("Please reach out before anything happens that can't be undone.\n"
+                   "• Emergency: 112\n"
+                   "• Tele-MANAS (to talk it through, 24x7): 14416" + _DIRECTORY)
+
 _RESPONSES: dict[str, str] = {
     "suicide": ("I'm really glad you told me, and I want you to be safe. What you're "
                 "feeling is heavy, and you don't have to carry it alone right now. "
-                "Please reach out to someone who can stay with you through this.\n\n" + _HELP),
+                "Please reach out to someone who can stay with you through this.\n\n"
+                + _MENTAL_HEALTH_LINES),
     "self_harm": ("Thank you for trusting me with this. You matter, and the pain you're "
-                  "carrying deserves real care — not alone.\n\n" + _HELP),
+                  "carrying deserves real care — not alone.\n\n" + _MENTAL_HEALTH_LINES),
     "abuse": ("I'm so sorry this is happening to you. You deserve to be safe, and what "
               "you're going through is not your fault. Please reach out to someone who "
-              "can help protect you.\n\n" + _HELP),
+              "can help protect you.\n\n" + _ABUSE_LINES),
     "violence": ("It sounds like you're in a lot of pain. Before anything happens that "
-                 "can't be undone, please talk to someone right now.\n\n" + _HELP),
+                 "can't be undone, please talk to someone right now.\n\n" + _VIOLENCE_LINES),
 }
 
 
