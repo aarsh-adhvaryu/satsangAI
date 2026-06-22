@@ -20,6 +20,8 @@ INDEX_PATH = ROOT / "api" / "data" / "counseling_index.parquet"
 
 # Models
 EMBED_MODEL = os.environ.get("SATSANG_EMBED_MODEL", "BAAI/bge-m3")   # 1024-d, unit-norm
+RERANK_MODEL = os.environ.get("SATSANG_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")  # multilingual
+RERANK = os.environ.get("SATSANG_RERANK", "1") != "0"               # cross-encoder rerank on
 GEN_MODEL = os.environ.get("SATSANG_GEN_MODEL", "claude-sonnet-4-6")  # saint generation
 PLAN_MODEL = os.environ.get("SATSANG_PLAN_MODEL", "claude-sonnet-4-6")  # understand+plan JSON
 EMBED_DEVICE = os.environ.get("SATSANG_EMBED_DEVICE", "cpu")          # cpu fine for single queries

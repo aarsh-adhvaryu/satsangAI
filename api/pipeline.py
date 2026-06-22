@@ -30,7 +30,8 @@ def respond(message: str):
     yield "plan", plan
 
     # 3. Retrieve (no LLM).
-    passages = retrieve(plan["search_queries"], mode=plan.get("mode", "counseling"))
+    passages = retrieve(plan["search_queries"], mode=plan.get("mode", "counseling"),
+                        rerank_query=plan.get("problem_summary") or message)
     yield "passages", [{"tag": f"[P{i}]", "citation": p.citation, "source": p.source,
                         "tradition": p.tradition, "score": round(p.score, 3)}
                        for i, p in enumerate(passages, 1)]
