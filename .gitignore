@@ -10,3 +10,6 @@ enrichment/data/gemma4-enrich-lora/
 enrichment/data/enriched*.parquet
 enrichment/data/*.f32
 *.safetensors
+
+# V1 API build artifacts (rebuildable from KB)
+api/data/*.parquet
