@@ -41,10 +41,15 @@ def _run_case(case: dict) -> dict:
                 "detail": f"UNEXPECTED crisis flag ({crisis.category})"}
 
     # run the nodes directly so the judge sees EXACTLY the passages the generator saw
+    from api import config
     plan = understand(msg)
     passages = retrieve(plan["search_queries"], mode=plan.get("mode", "counseling"),
                         rerank_query=plan.get("problem_summary") or msg)
-    reply = "".join(stream_reply(msg, plan, passages))
+    if config.FAITHFULNESS_GUARD:
+        from api.faithfulness import guarded_generate
+        reply, _ = guarded_generate(msg, plan, passages)
+    else:
+        reply = "".join(stream_reply(msg, plan, passages))
     verify_result = verify(reply, passages)
     block = _passages_block(passages)
 

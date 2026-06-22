@@ -22,6 +22,9 @@ INDEX_PATH = ROOT / "api" / "data" / "counseling_index.parquet"
 EMBED_MODEL = os.environ.get("SATSANG_EMBED_MODEL", "BAAI/bge-m3")   # 1024-d, unit-norm
 RERANK_MODEL = os.environ.get("SATSANG_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")  # multilingual
 RERANK = os.environ.get("SATSANG_RERANK", "1") != "0"               # cross-encoder rerank on
+# Faithfulness guard: generate -> check claims -> revise once if unfaithful (before send).
+# Stronger zero-hallucination, but non-streaming + 1-2 extra LLM calls. Off by default.
+FAITHFULNESS_GUARD = os.environ.get("SATSANG_FAITHFULNESS_GUARD", "0") == "1"
 
 # Crisis helplines in api/safety.py are PLACEHOLDERS. A human MUST verify every number
 # (and add region-appropriate lines) and set SATSANG_HELPLINES_VERIFIED=1 before any

@@ -11,7 +11,7 @@ Yields (event_type, payload) tuples so the API can stream them as SSE.
 """
 from __future__ import annotations
 
-from . import safety
+from . import config, safety
 from .generate import stream_reply
 from .memory import ConversationStore, MemoryStore, extract_facts
 from .retrieve import retrieve
@@ -50,14 +50,22 @@ def respond(message: str, conversation_id: str | None = None, user_id: str | Non
                        for i, p in enumerate(passages, 1)]
 
     # 4. Generate (grounded, memory + history aware).
-    full = []
-    for chunk in stream_reply(message, plan, passages, history=history, facts=facts):
-        full.append(chunk)
-        yield "text", chunk
-    reply = "".join(full)
+    if config.FAITHFULNESS_GUARD:
+        from .faithfulness import guarded_generate
+        reply, faith = guarded_generate(message, plan, passages, history=history, facts=facts)
+        yield "text", reply                     # guarded mode is non-streaming
+    else:
+        full = []
+        for chunk in stream_reply(message, plan, passages, history=history, facts=facts):
+            full.append(chunk)
+            yield "text", chunk
+        reply = "".join(full)
+        faith = None
 
-    # 5. Verify citations (deterministic).
+    # 5. Verify citations (deterministic) + faithfulness report.
     result = verify(reply, passages)
+    if faith is not None:
+        result["faithfulness"] = faith
 
     # 6. Update memory: short-term always; long-term facts gated by is_sensitive.
     if conversation_id:
