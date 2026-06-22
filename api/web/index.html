@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SatsangAI</title>
+<style>
+  :root { --bg:#f4f1ea; --ink:#2b2620; --soft:#6b6155; --accent:#b5651d; --card:#fffdf8;
+          --user:#e9e1d2; --line:#e0d7c6; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Georgia,'Times New Roman',serif; background:var(--bg);
+         color:var(--ink); height:100vh; display:flex; flex-direction:column; }
+  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex;
+           align-items:baseline; gap:12px; }
+  header h1 { margin:0; font-size:20px; letter-spacing:.5px; }
+  header .sub { color:var(--soft); font-size:13px; font-style:italic; }
+  header .reset { margin-left:auto; font-size:12px; color:var(--soft); cursor:pointer;
+                  background:none; border:1px solid var(--line); border-radius:6px;
+                  padding:5px 10px; font-family:inherit; }
+  #chat { flex:1; overflow-y:auto; padding:22px; max-width:760px; width:100%;
+          margin:0 auto; }
+  .msg { margin:14px 0; line-height:1.6; white-space:pre-wrap; }
+  .msg.user { text-align:right; }
+  .msg.user .bubble { background:var(--user); display:inline-block; padding:10px 14px;
+                      border-radius:14px 14px 2px 14px; max-width:80%; text-align:left; }
+  .msg.bot .bubble { background:var(--card); border:1px solid var(--line); padding:14px 16px;
+                     border-radius:2px 14px 14px 14px; display:inline-block; max-width:90%; }
+  .msg.bot.crisis .bubble { border-color:var(--accent); background:#fff7ef; }
+  .meta { font-size:12px; color:var(--soft); margin:4px 2px; font-style:italic; }
+  .sources { font-size:12px; color:var(--soft); margin-top:8px; }
+  .sources summary { cursor:pointer; }
+  .sources li { margin:3px 0; }
+  footer { border-top:1px solid var(--line); padding:14px; }
+  .inp { max-width:760px; margin:0 auto; display:flex; gap:10px; }
+  textarea { flex:1; resize:none; font-family:inherit; font-size:15px; padding:11px 13px;
+             border:1px solid var(--line); border-radius:10px; background:var(--card);
+             color:var(--ink); height:48px; }
+  button.send { background:var(--accent); color:#fff; border:none; border-radius:10px;
+                padding:0 20px; font-family:inherit; font-size:15px; cursor:pointer; }
+  button.send:disabled { opacity:.5; cursor:default; }
+  .dim { color:var(--soft); }
+</style>
+</head>
+<body>
+<header>
+  <h1>SatsangAI</h1>
+  <span class="sub">a companion in the wisdom of the saints</span>
+  <button class="reset" onclick="reset()">new conversation</button>
+</header>
+<div id="chat">
+  <div class="msg bot"><div class="bubble">Tell me what is on your heart. I am here to listen.</div></div>
+</div>
+<footer>
+  <div class="inp">
+    <textarea id="box" placeholder="Share what you're going through…"
+              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send();}"></textarea>
+    <button class="send" id="sendbtn" onclick="send()">Send</button>
+  </div>
+</footer>
+<script>
+const chat = document.getElementById('chat');
+const box = document.getElementById('box');
+const btn = document.getElementById('sendbtn');
+
+// stable ids for multi-turn + long-term memory
+function id(k){ let v=localStorage.getItem(k); if(!v){ v=k+'-'+Math.random().toString(36).slice(2,10);
+  localStorage.setItem(k,v);} return v; }
+let CONV = id('satsang_conv'), USER = id('satsang_user');
+
+function reset(){ localStorage.removeItem('satsang_conv'); CONV=id('satsang_conv');
+  chat.innerHTML=''; addBot('Tell me what is on your heart. I am here to listen.'); }
+
+function el(cls, html){ const d=document.createElement('div'); d.className=cls; d.innerHTML=html;
+  chat.appendChild(d); chat.scrollTop=chat.scrollHeight; return d; }
+function addUser(t){ el('msg user','<div class="bubble"></div>').querySelector('.bubble').textContent=t; }
+function addBot(t){ const m=el('msg bot','<div class="bubble"></div>'); m.querySelector('.bubble').textContent=t; return m; }
+function esc(s){ return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+async function send(){
+  const text = box.value.trim(); if(!text) return;
+  box.value=''; addUser(text); btn.disabled=true;
+  const meta = el('meta','<span class="dim">…thinking</span>');
+  const botMsg = addBot(''); const bubble = botMsg.querySelector('.bubble');
+  let acc='';
+  try {
+    const resp = await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({message:text, conversation_id:CONV, user_id:USER})});
+    const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf='';
+    while(true){
+      const {done,value} = await reader.read(); if(done) break;
+      buf += dec.decode(value,{stream:true});
+      const parts = buf.split('\n\n'); buf = parts.pop();
+      for(const p of parts){
+        let ev='message', data='';
+        for(const ln of p.split('\n')){
+          if(ln.startsWith('event:')) ev=ln.slice(6).trim();
+          else if(ln.startsWith('data:')) data += ln.slice(5).trimStart();
+        }
+        if(!data) continue; let pl; try{ pl=JSON.parse(data); }catch(e){ continue; }
+        if(ev==='plan'){ meta.innerHTML='<span class="dim">feeling: '+esc(pl.primary_emotion||'')+' · '+esc(pl.mode||'')+'</span>'; }
+        else if(ev==='crisis'){ botMsg.classList.add('crisis'); }
+        else if(ev==='passages'){ botMsg._passages=pl; }
+        else if(ev==='text'){ acc+=pl; bubble.textContent=acc; chat.scrollTop=chat.scrollHeight; }
+        else if(ev==='done'){
+          const ps = botMsg._passages||[];
+          if(ps.length){
+            const lis = ps.map(x=>'<li>'+esc(x.citation)+' <span class="dim">('+esc(x.tradition)+')</span></li>').join('');
+            const det=document.createElement('details'); det.className='sources';
+            det.innerHTML='<summary>sources ('+ps.length+')</summary><ul>'+lis+'</ul>';
+            botMsg.appendChild(det);
+          }
+        }
+      }
+    }
+  } catch(e){ bubble.textContent='(connection error — is the server running?)'; }
+  if(!acc && !botMsg.classList.contains('crisis')) bubble.textContent='(no response)';
+  btn.disabled=false; box.focus();
+}
+box.focus();
+</script>
+</body>
+</html>

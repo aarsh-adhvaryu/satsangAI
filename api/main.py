@@ -6,15 +6,22 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from . import config
 from .pipeline import respond
 
 app = FastAPI(title="SatsangAI V1")
+_WEB = Path(__file__).resolve().parent / "web" / "index.html"
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(_WEB)
 
 
 @app.on_event("startup")
