@@ -18,6 +18,11 @@ KB_META = KB / "embeddings_meta.json"
 
 INDEX_PATH = ROOT / "api" / "data" / "counseling_index.parquet"
 
+# Storage backend: "memory" (parquet + JSON files; default) or "postgres" (pgvector).
+STORE_BACKEND = os.environ.get("SATSANG_STORE", "memory")
+DATABASE_URL = os.environ.get(
+    "SATSANG_DATABASE_URL", "postgresql://postgres:satsang@localhost:5433/satsang")
+
 # Models
 EMBED_MODEL = os.environ.get("SATSANG_EMBED_MODEL", "BAAI/bge-m3")   # 1024-d, unit-norm
 RERANK_MODEL = os.environ.get("SATSANG_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")  # multilingual

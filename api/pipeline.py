@@ -13,13 +13,14 @@ from __future__ import annotations
 
 from . import config, safety
 from .generate import stream_reply
-from .memory import ConversationStore, MemoryStore, extract_facts
+from .memory import extract_facts
 from .retrieve import retrieve
+from .store import conversation_store, fact_store
 from .understand import understand
 from .verify import verify
 
-_convos = ConversationStore()
-_memory = MemoryStore()
+_convos = conversation_store()
+_memory = fact_store()
 
 
 def respond(message: str, conversation_id: str | None = None, user_id: str | None = None):

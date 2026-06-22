@@ -1,0 +1,22 @@
+# Postgres + pgvector for the V1 backend's "postgres" store.
+#   docker compose up -d
+#   SATSANG_DATABASE_URL=postgresql://postgres:satsang@localhost:5433/satsang \
+#     python -m api.db.load_pg            # one-time: create schema + load passages
+#   SATSANG_STORE=postgres uvicorn api.main:app --host 0.0.0.0 --port 8000
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_PASSWORD: satsang
+      POSTGRES_DB: satsang
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  pgdata:

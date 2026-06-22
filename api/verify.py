@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from .index import get_index
+from .store import vector_store
 from .retrieve import Passage
 
 _TAG = re.compile(r"\[P(\d+)\]")
@@ -19,7 +19,7 @@ _LOOSE_REF = re.compile(
 
 
 def verify(text: str, passages: list[Passage]) -> dict:
-    idx = get_index()
+    idx = vector_store()
     used = sorted({int(m) for m in _TAG.findall(text)})
     cited = []
     for n in used:

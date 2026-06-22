@@ -15,3 +15,5 @@ enrichment/data/*.f32
 api/data/*.parquet
 api/data/memory/
 eval/last_results.json
+docker-compose env
+.env

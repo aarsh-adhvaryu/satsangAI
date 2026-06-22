@@ -9,15 +9,15 @@ from __future__ import annotations
 
 from . import config
 from .embed import embed_query
-from .index import get_index
 from .retrieve_types import Passage
+from .store import vector_store
 
 __all__ = ["Passage", "retrieve"]
 
 
 def retrieve(queries: list[str], mode: str = "counseling", top_k: int = config.TOP_K,
              rerank_query: str | None = None) -> list[Passage]:
-    idx = get_index()
+    idx = vector_store()
     allowed = None if mode == "shastrarth" else config.COUNSELING_TRADITIONS
 
     # 1. vector recall: union of top candidates across queries, best score per id

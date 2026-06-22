@@ -140,6 +140,33 @@ Audited completeness + integrity + quality, all clean:
 - **KB repo CLAUDE.md** (`../satsangai/CLAUDE.md`) still says "enrichment NOT done" — now stale;
   update it (that repo is on branch `kb-integrity-remediation`).
 
+## V1 backend — run & deploy (`api/`)
+Pipeline: `safety` → `understand` (Sonnet JSON) → `retrieve` (BGE-M3 + tradition filter +
+`rerank` bge-reranker-v2-m3) → `generate` (Sonnet, streaming, `[P#]`-grounded) → `verify`
+(deterministic) → memory (short-term always; long-term gated by `is_sensitive`). Chat UI at
+`/` (`api/web/index.html`); SSE `/chat`; `/health`.
+
+```bash
+# build the retrieval index from the enriched KB (once)
+python -m api.build_index
+# run (in-memory stores; default)
+source ~/.zshrc && HF_HUB_OFFLINE=1 uvicorn api.main:app --host 0.0.0.0 --port 8000
+# tests + evals
+python -m api.tests.test_safety_memory
+source ~/.zshrc && HF_HUB_OFFLINE=1 python -m eval.run_eval        # + eval.topic_switch / retrieval_lift
+```
+Storage is swappable via `SATSANG_STORE` (`memory` default | `postgres`):
+```bash
+docker compose up -d                                                # pgvector Postgres (:5433)
+SATSANG_DATABASE_URL=postgresql://postgres:satsang@localhost:5433/satsang python -m api.db.load_pg
+SATSANG_STORE=postgres SATSANG_DATABASE_URL=... uvicorn api.main:app --port 8000
+```
+- `api/store.py` factories pick memory vs `api/pg.py` (pgvector) by config — verified at parity
+  (10/10 search overlap; sensitive-data gate enforced in PG too). Schema: `api/db/schema.sql`.
+- Toggles (env): `SATSANG_RERANK=0` off; `SATSANG_FAITHFULNESS_GUARD=1` (non-streaming, revises
+  unfaithful claims); `SATSANG_HELPLINES_VERIFIED` (India-core verified, default on);
+  `SATSANG_EMBED_DEVICE=cuda` for throughput. Models: `claude-sonnet-4-6` gen/plan, Opus judge in evals.
+
 ## Environment / gotchas
 - GPU box (RTX PRO 6000 **Blackwell**, 96 GB). HF token cached in `$HF_HOME`.
 - **Blackwell + Gemma 4 MoE:** torch 2.8's `grouped_mm` MoE kernel is Hopper-only (cc==9.0);
