@@ -122,14 +122,17 @@ harness blocks the bulk external upload for the agent).
    collected from V1 usage). Enrichment did NOT use DPO (gold-target SFT task; DPO is for persona).
 4. Enrich the widen/shastrarth tiers + the 4 null rows if/when wanted (optional).
 
-### AUDIT — deferred, do before trusting V1 retrieval (owner said "audit later")
-- **Quality spot-check** the enrichment beyond the priority rows: sample per tradition/source
-  (esp. the long sw_lit biography tail done late in the run) for faithfulness, no invented
-  doctrine, accurate Gujarati. Baseline + gold were strong; the tail is unaudited.
-- **4 null rows** (`vachanamrut_166` + 3 sw_lit chunks) — deterministic JSON failures, left
-  retrieval-only; repair or accept.
-- **Retrieval lift** — measure problem-first retrieval before vs after enrichment (does a
-  counseling query now surface better passages?). The old embeddings are in the `.pre_enrich.bak`.
+### AUDIT — data audit PASSED (2026-06); only retrieval-lift remains (folds into V1)
+Audited completeness + integrity + quality, all clean:
+- **Completeness** ✓ 231,940 rows · 17,808 core · 17,804 enriched · 4 known nulls · 0 non-core
+  rows wrongly touched · all fields filled.
+- **Integrity** ✓ all 17,804 new vectors unit-norm + changed vs backup; 5,000/5,000 sampled
+  non-enriched rows byte-identical to backup (rest of KB uncorrupted); pushed HF file correct.
+- **Quality** ✓ contextual_explanation 100% unique (no collapse), none truncated, zero JSON/
+  prompt-echo artifacts; sampled biography tail + Bhashyam + Upanishads faithful, Gujarati natural.
+- **4 null rows** (`vachanamrut_166` + 3 sw_lit chunks) — accepted, retrieval-only.
+- **Retrieval lift** — NOT yet measured (needs a retriever): do at V1 time, before/after, using
+  the old embeddings preserved in `embeddings.f32.pre_enrich.bak`.
 - **Provenance / V2 purity** — enrichment is Gemma-generated but the adapter was QLoRA-tuned on
   **Claude-Opus gold**, so it's *Claude-bootstrapped*. Runtime stays Gemma-only (claim intact);
   if strict "never-Claude" V2 purity is later required, regenerate with a non-Claude-gold adapter
