@@ -11,9 +11,19 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from . import config
 from .pipeline import respond
 
 app = FastAPI(title="SatsangAI V1")
+
+
+@app.on_event("startup")
+def _warn_helplines() -> None:
+    if not config.CRISIS_HELPLINES_VERIFIED:
+        print("\n" + "!" * 70 + "\n!! CRISIS HELPLINE NUMBERS IN api/safety.py ARE UNVERIFIED PLACEHOLDERS.\n"
+              "!! A human must verify them and set SATSANG_HELPLINES_VERIFIED=1 before\n"
+              "!! any real use. (Safety-first: do not ship crisis responses unverified.)\n"
+              + "!" * 70 + "\n")
 
 
 class ChatIn(BaseModel):
