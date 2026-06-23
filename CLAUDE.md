@@ -19,9 +19,13 @@ committed to GitHub `main`, and detailed later in this file. A new session can j
   memory; chat UI at `/`; Postgres backend swappable via `SATSANG_STORE`. See "V1 backend — run & deploy".
 - **Evaluated:** drift/boundaries 5/5, crisis 2/2, hallucination 2/2, topic-switch 5/5, quality
   14/15, safety/memory tests pass; retrieval-lift = honest tie (value is in generation, not vectors).
-- **NEXT (not started):** app **Dockerfile** for one-command deploy; regional/diaspora helplines;
-  frontend polish; then **V2** = QLoRA + **DPO** generation Gemma (Claude-free), fed by V1's
-  Postgres conversation data. Full ongoing state: see project memory `satsangai-project-state`.
+- **Deploy DONE:** self-contained `Dockerfile` (+ `requirements.txt`, `.dockerignore`) — CPU-torch,
+  bakes BGE-M3 + reranker for offline start, copies the prebuilt index; `docker compose up --build`
+  is one-command (in-memory store; Postgres behind the `postgres` profile). Built (8.65GB) +
+  smoke-tested: `/health` ok, full SSE chat round-trip works in-container. Pass `ANTHROPIC_API_KEY` at run.
+- **NEXT (not started):** regional/diaspora helplines (`api/safety.py`); frontend polish; then
+  **V2** = QLoRA + **DPO** generation Gemma (Claude-free), fed by V1's Postgres conversation data.
+  Full ongoing state: see project memory `satsangai-project-state`.
 - **Run:** `source ~/.zshrc && HF_HUB_OFFLINE=1 uvicorn api.main:app --port 8000` (index built via
   `python -m api.build_index`). Key access: ANTHROPIC_API_KEY in `~/.zshrc` (prefix commands with
   `source ~/.zshrc`). No GPU needed for V1; GPU (Blackwell, eager-MoE) only for V2 enrichment/tuning.

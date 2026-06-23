@@ -1,0 +1,25 @@
+# Keep the build context small + the image reproducible.
+# NOTE: api/data/counseling_index.parquet IS intentionally included (it's the
+# prebuilt counseling-core retrieval index the app loads at startup; gitignored
+# but baked into the image for a self-contained, KB-free deploy).
+
+.git/
+.gitignore
+README.md
+
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Runtime state (conversations / long-term memory) — never bake into the image.
+api/data/memory/
+
+# Offline enrichment/tuning + eval artifacts — not needed by the app at runtime.
+enrichment/data/
+eval/last_results.json
+*.bak
+*.pre_enrich.bak
+
+# Local env / secrets.
+.env
+docker-compose.yml

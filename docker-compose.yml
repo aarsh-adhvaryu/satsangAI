@@ -1,11 +1,31 @@
-# Postgres + pgvector for the V1 backend's "postgres" store.
-#   docker compose up -d
-#   SATSANG_DATABASE_URL=postgresql://postgres:satsang@localhost:5433/satsang \
-#     python -m api.db.load_pg            # one-time: create schema + load passages
-#   SATSANG_STORE=postgres uvicorn api.main:app --host 0.0.0.0 --port 8000
+# One-command deploy of the SatsangAI V1 app.
+#
+#   source ~/.zshrc            # exports ANTHROPIC_API_KEY
+#   docker compose up --build  # -> app on http://localhost:8000  (in-memory store)
+#
+# That runs the app alone with the default in-memory store (no DB needed). To use
+# the Postgres (pgvector) store instead, bring up the "postgres" profile AND set
+# SATSANG_STORE=postgres (the app reaches the db service at host "db"):
+#
+#   SATSANG_STORE=postgres docker compose --profile postgres up --build -d
+#   docker compose exec app python -m api.db.load_pg   # one-time: schema + load passages
 services:
+  app:
+    build:
+      context: .
+    image: satsangai
+    ports:
+      - "8000:8000"
+    environment:
+      # Required: generation/planning key. `source ~/.zshrc` before `up`.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY (source ~/.zshrc)}
+      SATSANG_STORE: ${SATSANG_STORE:-memory}
+      SATSANG_DATABASE_URL: postgresql://postgres:satsang@db:5432/satsang
+    restart: unless-stopped
+
   db:
     image: pgvector/pgvector:pg16
+    profiles: ["postgres"]
     environment:
       POSTGRES_PASSWORD: satsang
       POSTGRES_DB: satsang
@@ -18,5 +38,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
 volumes:
   pgdata:
