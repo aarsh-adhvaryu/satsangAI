@@ -9,6 +9,23 @@ GitHub: https://github.com/aarsh-adhvaryu/satsangAI
 The **knowledge base is a separate, finished project** — do NOT rebuild it here.
 This repo *consumes* it and adds enrichment, retrieval, generation, memory, and the API.
 
+## ⏯️ CURRENT STATUS (2026-06) — resume here
+**V1 backend is complete, evaluated, and deployable.** Everything below is built, tested,
+committed to GitHub `main`, and detailed later in this file. A new session can just continue.
+- **KB enrichment DONE + shipped:** 17,804/17,808 counseling-core rows enriched (Gemma 4 26B
+  MoE, QLoRA-tuned on Claude-Opus gold, runtime Claude-free), embedded, written back, pushed
+  to HF `aarsh-adhvaryu/satsangai-kb` (private). Audited at parity. See "Enrichment pipeline".
+- **V1 backend DONE:** `api/` — safety → understand → retrieve(+rerank) → generate → verify →
+  memory; chat UI at `/`; Postgres backend swappable via `SATSANG_STORE`. See "V1 backend — run & deploy".
+- **Evaluated:** drift/boundaries 5/5, crisis 2/2, hallucination 2/2, topic-switch 5/5, quality
+  14/15, safety/memory tests pass; retrieval-lift = honest tie (value is in generation, not vectors).
+- **NEXT (not started):** app **Dockerfile** for one-command deploy; regional/diaspora helplines;
+  frontend polish; then **V2** = QLoRA + **DPO** generation Gemma (Claude-free), fed by V1's
+  Postgres conversation data. Full ongoing state: see project memory `satsangai-project-state`.
+- **Run:** `source ~/.zshrc && HF_HUB_OFFLINE=1 uvicorn api.main:app --port 8000` (index built via
+  `python -m api.build_index`). Key access: ANTHROPIC_API_KEY in `~/.zshrc` (prefix commands with
+  `source ~/.zshrc`). No GPU needed for V1; GPU (Blackwell, eager-MoE) only for V2 enrichment/tuning.
+
 ## Core principles (from the proposal)
 - **Problem-first, not scripture-first** — understand the human problem, then let
   scripture serve it.
