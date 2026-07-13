@@ -1,0 +1,62 @@
+"""Step 1 of V2 alignment — QLoRA **SFT** of Gemma-4 26B MoE on the faithful
+`chosen` saint replies. Establishes the persona + grounding behaviour that DPO
+then sharpens. Completion-only loss (prompt masked). GPU-only; run nothing until
+the owner enables the GPU.
+
+    python -m v2.sft_train --data v2/data/pairs.jsonl --epochs 3
+    python -m v2.sft_train --smoke        # de-risk the stack (few steps, tiny data)
+
+Accuracy config lives in v2/train_config.py (rank 32, all attn+MLP, bf16 NF4,
+eval split). See its docstring for the QLoRA tradeoff reasoning.
+"""
+from __future__ import annotations
+
+import argparse
+
+from v2 import train_config as C
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data", default=str(C.PAIRS))
+    ap.add_argument("--epochs", type=float, default=3)
+    ap.add_argument("--lr", type=float, default=1e-4)     # SFT: standard QLoRA LR
+    ap.add_argument("--out", default=str(C.SFT_OUT))
+    ap.add_argument("--smoke", action="store_true")
+    a = ap.parse_args()
+
+    from peft import get_peft_model
+    from trl import SFTConfig, SFTTrainer
+
+    model, tok = C.load_base()
+    model = get_peft_model(model, C.lora_config(model))
+    model.print_trainable_parameters()
+
+    train_ds, eval_ds = C.sft_dataset(tok, a.data)
+    if a.smoke:
+        train_ds, eval_ds = train_ds.select(range(min(8, len(train_ds)))), \
+                            eval_ds.select(range(min(2, len(eval_ds))))
+    print(f"SFT on {len(train_ds)} train / {len(eval_ds)} eval examples")
+
+    cfg = SFTConfig(
+        output_dir=a.out, num_train_epochs=a.epochs,
+        per_device_train_batch_size=1, gradient_accumulation_steps=16,   # eff. batch 16
+        learning_rate=a.lr, warmup_ratio=0.03, lr_scheduler_type="cosine",
+        bf16=True, max_length=C.MAX_LEN, completion_only_loss=True, packing=False,
+        gradient_checkpointing=True, gradient_checkpointing_kwargs={"use_reentrant": False},
+        logging_steps=5, eval_strategy="steps", eval_steps=25,
+        save_strategy="steps", save_steps=25, save_total_limit=2,
+        load_best_model_at_end=True, metric_for_best_model="eval_loss", greater_is_better=False,
+        report_to="none", max_steps=6 if a.smoke else -1)
+
+    trainer = SFTTrainer(model=model, args=cfg,
+                         train_dataset=train_ds, eval_dataset=eval_ds,
+                         processing_class=tok)
+    trainer.train()
+    trainer.save_model(a.out)
+    tok.save_pretrained(a.out)
+    print(f"saved SFT LoRA adapter -> {a.out}")
+
+
+if __name__ == "__main__":
+    main()

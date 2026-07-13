@@ -65,16 +65,42 @@ python -m v2.build_pairs --n 200 --chosen placeholder --out v2/data/pairs_sample
 python -c "import v2.tests.test_pipeline as t; [getattr(t,f)() for f in dir(t) if f.startswith('test_')]"
 ```
 
-## Gated next steps (need a GPU session — ASK the owner to enable it, bundle them)
+## Tuning stack (written, accuracy-tuned; GPU-gated — run NOTHING until owner enables GPU)
 
-1. **`chosen` generation.** Either `--chosen claude` (Opus, OFFLINE gold only —
-   bootstrap; ~like the enrichment gold) or, for strict purity, `--chosen gemma`
-   after SFT (the model self-generates, filtered by `api/verify` + a quality gate).
-   Optionally have the teacher also paraphrase the mined problems for higher fidelity.
-2. **SFT (QLoRA)** the base Gemma on the `chosen` replies — reuse
-   `enrichment/qlora_train.py` (4-bit bnb, LoRA on `language_model` `Linear4bit`,
-   `experts_implementation="eager"` for Blackwell).
-3. **DPO** on the pairs (`trl` DPOTrainer over the same LoRA target set), every batch
-   carrying the anti-drift negatives.
-4. **6-gate eval (§20.3)** before any deploy — extend `eval/` (hallucination,
-   persona, sycophancy, emotional-appropriateness, scripture-accuracy, RAGAS).
+The tuners are staged and compile-checked; the CPU data-prep path is verified. They
+only load the model inside `main()`, so nothing touches CUDA until you launch them.
+
+- `train_config.py` — shared QLoRA config + the **QLoRA accuracy-tradeoff writeup**
+  (why rank 32 / alpha 64, NF4 + double-quant + bf16, all attn+MLP targets, eval
+  split, and the conservative DPO knobs). Reference this before running.
+- `sft_train.py` — **Step 1: QLoRA SFT** on the faithful `chosen` replies
+  (completion-only loss, eval split, best-checkpoint). Establishes persona + grounding.
+- `dpo_train.py` — **Step 2: QLoRA DPO** on the pairs, continuing from the SFT
+  adapter; reference = SFT policy with adapter disabled; LR 5e-6 / 1 epoch / beta 0.1
+  (DPO overfits fast on a 4-bit policy and can reward-hack length).
+
+### Gated run order (bundle into one GPU session)
+
+```bash
+# 0. generate real `chosen` (offline) and write the real pairs file:
+python -m v2.build_pairs --n 5000 --chosen claude --out v2/data/pairs.jsonl   # OR --chosen gemma
+# 1. de-risk the stack (few steps, tiny data):
+python -m v2.sft_train --smoke   &&   python -m v2.dpo_train --smoke
+# 2. real runs:
+python -m v2.sft_train --data v2/data/pairs.jsonl --epochs 3
+python -m v2.dpo_train --data v2/data/pairs.jsonl --sft v2/data/gemma4-v2-sft-lora
+# 3. 6-gate eval (§20.3) before any deploy — extend eval/:
+#    hallucination · persona · sycophancy · emotional-appropriateness · scripture-accuracy · RAGAS
+```
+
+### Watch-items for the GPU run
+- **`chosen` source first** — pick `--chosen claude` (bootstrap, offline gold) or the
+  strict-pure `--chosen gemma` (needs an initial SFT to self-generate). Optionally have
+  the teacher paraphrase the mined problems for higher fidelity than the regex seeds.
+- **Data-quality gate** — before DPO, drop any pair whose `chosen` fails `api/verify`
+  (don't let DPO reinforce an ungrounded chosen). Add as a `build_pairs` filter.
+- **Gemma-4 "thought" channel** — the chat template opens a `thought` channel at the
+  generation point. The enrichment tuner used this exact template with a plain
+  completion and trained cleanly, so the tuners follow that proven pattern; if you want
+  explicit chain-of-thought before the saint reply, format `chosen` with a thought segment.
+- **`pytest` is not installed** — run the smoke tests via the dir-loop one-liner above.
