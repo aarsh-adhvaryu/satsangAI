@@ -3,120 +3,299 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SatsangAI</title>
+<title>SatsangAI — a companion in the wisdom of the saints</title>
 <style>
-  :root { --bg:#f4f1ea; --ink:#2b2620; --soft:#6b6155; --accent:#b5651d; --card:#fffdf8;
-          --user:#e9e1d2; --line:#e0d7c6; }
-  * { box-sizing:border-box; }
-  body { margin:0; font-family:Georgia,'Times New Roman',serif; background:var(--bg);
-         color:var(--ink); height:100vh; display:flex; flex-direction:column; }
-  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex;
-           align-items:baseline; gap:12px; }
-  header h1 { margin:0; font-size:20px; letter-spacing:.5px; }
-  header .sub { color:var(--soft); font-size:13px; font-style:italic; }
-  header .reset { margin-left:auto; font-size:12px; color:var(--soft); cursor:pointer;
-                  background:none; border:1px solid var(--line); border-radius:6px;
-                  padding:5px 10px; font-family:inherit; }
-  #chat { flex:1; overflow-y:auto; padding:22px; max-width:760px; width:100%;
-          margin:0 auto; }
-  .msg { margin:14px 0; line-height:1.6; white-space:pre-wrap; }
-  .msg.user { text-align:right; }
-  .msg.user .bubble { background:var(--user); display:inline-block; padding:10px 14px;
-                      border-radius:14px 14px 2px 14px; max-width:80%; text-align:left; }
-  .msg.bot .bubble { background:var(--card); border:1px solid var(--line); padding:14px 16px;
-                     border-radius:2px 14px 14px 14px; display:inline-block; max-width:90%; }
-  .msg.bot.crisis .bubble { border-color:var(--accent); background:#fff7ef; }
-  .meta { font-size:12px; color:var(--soft); margin:4px 2px; font-style:italic; }
-  .sources { font-size:12px; color:var(--soft); margin-top:8px; }
-  .sources summary { cursor:pointer; }
-  .sources li { margin:3px 0; }
-  footer { border-top:1px solid var(--line); padding:14px; }
-  .inp { max-width:760px; margin:0 auto; display:flex; gap:10px; }
-  textarea { flex:1; resize:none; font-family:inherit; font-size:15px; padding:11px 13px;
-             border:1px solid var(--line); border-radius:10px; background:var(--card);
-             color:var(--ink); height:48px; }
-  button.send { background:var(--accent); color:#fff; border:none; border-radius:10px;
-                padding:0 20px; font-family:inherit; font-size:15px; cursor:pointer; }
-  button.send:disabled { opacity:.5; cursor:default; }
-  .dim { color:var(--soft); }
+  :root{
+    --bg:#f5f2ea; --panel:#efe9dc; --card:#fffdf8; --ink:#2c2620; --soft:#6f6456;
+    --faint:#a89d8b; --accent:#bf6b1e; --accent-soft:#f2e6d6; --user:#e7ddcc;
+    --line:#e2d9c8; --verified:#5f7d55; --warn:#b5651d; --shadow:rgba(60,45,25,.08);
+    --serif:Georgia,'Iowan Old Style','Times New Roman',serif;
+    --sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#17140f; --panel:#1f1a14; --card:#221d16; --ink:#ece4d5; --soft:#a89c88;
+           --faint:#6d6252; --accent:#d98c4a; --accent-soft:#31261a; --user:#2b241b;
+           --line:#352d22; --verified:#8fac82; --warn:#d98c4a; --shadow:rgba(0,0,0,.35); }
+  }
+  :root[data-theme="light"]{ --bg:#f5f2ea; --panel:#efe9dc; --card:#fffdf8; --ink:#2c2620;
+    --soft:#6f6456; --faint:#a89d8b; --accent:#bf6b1e; --accent-soft:#f2e6d6; --user:#e7ddcc;
+    --line:#e2d9c8; --verified:#5f7d55; --warn:#b5651d; --shadow:rgba(60,45,25,.08); }
+  :root[data-theme="dark"]{ --bg:#17140f; --panel:#1f1a14; --card:#221d16; --ink:#ece4d5;
+    --soft:#a89c88; --faint:#6d6252; --accent:#d98c4a; --accent-soft:#31261a; --user:#2b241b;
+    --line:#352d22; --verified:#8fac82; --warn:#d98c4a; --shadow:rgba(0,0,0,.35); }
+
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{ margin:0; font-family:var(--serif); background:var(--bg); color:var(--ink);
+        display:flex; flex-direction:column; min-height:100dvh; }
+
+  header{ padding:12px 20px; border-bottom:1px solid var(--line); background:var(--panel);
+          display:flex; align-items:center; gap:14px; }
+  .brand{ width:34px; height:34px; border-radius:50%; flex:none; display:grid; place-items:center;
+          background:radial-gradient(circle at 40% 35%,var(--accent),#8a4a12); color:#fff;
+          font-size:18px; box-shadow:0 1px 4px var(--shadow); }
+  .titles h1{ margin:0; font-size:19px; letter-spacing:.3px; line-height:1.1; }
+  .titles .sub{ color:var(--soft); font-size:12.5px; font-style:italic; }
+  .spacer{ margin-left:auto; }
+  header button{ font-family:var(--sans); font-size:12px; color:var(--soft); cursor:pointer;
+                 background:var(--card); border:1px solid var(--line); border-radius:8px;
+                 padding:6px 11px; display:inline-flex; align-items:center; gap:6px; }
+  header button:hover{ border-color:var(--accent); color:var(--ink); }
+
+  #scroll{ flex:1; overflow-y:auto; }
+  #chat{ max-width:740px; width:100%; margin:0 auto; padding:24px 20px 8px; }
+
+  .row{ margin:18px 0; display:flex; flex-direction:column; animation:rise .25s ease; }
+  @keyframes rise{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+  .row.user{ align-items:flex-end; }
+  .bubble{ line-height:1.62; white-space:pre-wrap; word-wrap:break-word; }
+  .user .bubble{ background:var(--user); padding:10px 15px; border-radius:16px 16px 4px 16px;
+                 max-width:82%; }
+  .bot .bubble{ background:var(--card); border:1px solid var(--line); padding:15px 17px;
+                border-radius:4px 16px 16px 16px; max-width:100%; box-shadow:0 1px 3px var(--shadow); }
+  .bot.crisis .bubble{ border-color:var(--accent); background:var(--accent-soft); }
+  .bubble.streaming::after{ content:'▍'; color:var(--accent); animation:blink 1s steps(2) infinite;
+                            margin-left:1px; }
+  @keyframes blink{ 50%{ opacity:0; } }
+
+  /* inline citation chips */
+  .cite{ font-family:var(--sans); font-size:11px; font-weight:600; vertical-align:.2em;
+         color:var(--accent); background:var(--accent-soft); border:1px solid var(--line);
+         border-radius:5px; padding:0 5px; margin:0 1px; cursor:pointer; text-decoration:none;
+         white-space:nowrap; }
+  .cite:hover{ border-color:var(--accent); }
+  .cite.bad{ color:var(--warn); }
+
+  /* progress stages while the pipeline runs */
+  .stages{ font-family:var(--sans); font-size:12.5px; color:var(--soft); margin:2px 2px 0;
+           display:flex; align-items:center; gap:8px; }
+  .stages .dot{ width:6px; height:6px; border-radius:50%; background:var(--accent);
+                animation:pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{ opacity:.3; } 50%{ opacity:1; } }
+  .plan{ font-family:var(--sans); font-size:12px; color:var(--faint); margin:6px 2px 0;
+         font-style:normal; }
+  .plan b{ color:var(--soft); font-weight:600; }
+
+  /* grounding + sources footer under a reply */
+  .ground{ font-family:var(--sans); font-size:12px; margin:10px 2px 0; color:var(--soft);
+           display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .ground .ok{ color:var(--verified); font-weight:600; }
+  .ground .warn{ color:var(--warn); font-weight:600; }
+  .sources{ font-family:var(--sans); font-size:12.5px; margin-top:8px; }
+  .sources summary{ cursor:pointer; color:var(--soft); list-style:none; user-select:none; }
+  .sources summary::-webkit-details-marker{ display:none; }
+  .sources summary::before{ content:'▸ '; color:var(--faint); }
+  .sources[open] summary::before{ content:'▾ '; }
+  .sources ol{ margin:8px 0 2px; padding:0; list-style:none; }
+  .sources li{ margin:6px 0; padding:8px 11px; background:var(--panel); border:1px solid var(--line);
+               border-radius:9px; display:flex; gap:9px; align-items:baseline; }
+  .sources li.hl{ border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
+  .sources .tag{ color:var(--accent); font-weight:700; flex:none; }
+  .sources .cit{ color:var(--ink); flex:1; }
+  .badge{ font-size:10.5px; padding:1px 7px; border-radius:20px; border:1px solid var(--line);
+          color:var(--soft); white-space:nowrap; }
+  .badge.trad{ background:var(--accent-soft); color:var(--accent); border-color:transparent; }
+  .badge.v{ color:var(--verified); border-color:var(--verified); }
+  .privacy{ font-family:var(--sans); font-size:11.5px; color:var(--faint); margin:8px 2px 0;
+            display:flex; gap:6px; align-items:center; }
+
+  footer{ border-top:1px solid var(--line); background:var(--panel); padding:12px 16px
+          calc(12px + env(safe-area-inset-bottom)); }
+  .inp{ max-width:740px; margin:0 auto; display:flex; gap:10px; align-items:flex-end; }
+  textarea{ flex:1; resize:none; font-family:var(--serif); font-size:15.5px; line-height:1.45;
+            padding:12px 14px; border:1px solid var(--line); border-radius:13px; background:var(--card);
+            color:var(--ink); max-height:160px; min-height:50px; box-shadow:0 1px 3px var(--shadow); }
+  textarea:focus{ outline:none; border-color:var(--accent); }
+  .send{ background:var(--accent); color:#fff; border:none; border-radius:13px; height:50px;
+         padding:0 22px; font-family:var(--sans); font-size:14.5px; font-weight:600; cursor:pointer; }
+  .send:hover{ filter:brightness(1.05); }
+  .send:disabled{ opacity:.45; cursor:default; }
+  .hint{ max-width:740px; margin:7px auto 0; font-family:var(--sans); font-size:11px;
+         color:var(--faint); text-align:center; }
+
+  @media (max-width:560px){
+    .titles .sub{ display:none; }
+    .bot .bubble,.user .bubble{ max-width:100%; }
+    .send{ padding:0 16px; }
+  }
+  @media (prefers-reduced-motion:reduce){ *{ animation:none!important; } }
 </style>
 </head>
 <body>
 <header>
-  <h1>SatsangAI</h1>
-  <span class="sub">a companion in the wisdom of the saints</span>
-  <button class="reset" onclick="reset()">new conversation</button>
+  <div class="brand" aria-hidden="true">॥</div>
+  <div class="titles">
+    <h1>SatsangAI</h1>
+    <div class="sub">a companion in the wisdom of the saints</div>
+  </div>
+  <div class="spacer"></div>
+  <button id="themebtn" onclick="toggleTheme()" title="Toggle light / dark" aria-label="Toggle theme">◐</button>
+  <button onclick="reset()" title="Start a new conversation">✦ new</button>
 </header>
-<div id="chat">
-  <div class="msg bot"><div class="bubble">Tell me what is on your heart. I am here to listen.</div></div>
+
+<div id="scroll">
+  <div id="chat" role="log" aria-live="polite"></div>
 </div>
+
 <footer>
   <div class="inp">
-    <textarea id="box" placeholder="Share what you're going through…"
-              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send();}"></textarea>
+    <textarea id="box" rows="1" aria-label="Your message"
+      placeholder="Share what is on your heart…"
+      oninput="autosize()"
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send();}"></textarea>
     <button class="send" id="sendbtn" onclick="send()">Send</button>
   </div>
+  <div class="hint">Grounded in real scripture · every citation verified · not a substitute for professional care</div>
 </footer>
-<script>
-const chat = document.getElementById('chat');
-const box = document.getElementById('box');
-const btn = document.getElementById('sendbtn');
 
-// stable ids for multi-turn + long-term memory
+<script>
+const chat=document.getElementById('chat'), scroller=document.getElementById('scroll'),
+      box=document.getElementById('box'), btn=document.getElementById('sendbtn');
+const GREETING='Tell me what is on your heart. I am here to listen — without judgment.';
+
+/* ---- theme (system default, user-overridable, persisted) ---- */
+function applyTheme(t){ if(t==='light'||t==='dark') document.documentElement.setAttribute('data-theme',t);
+  else document.documentElement.removeAttribute('data-theme'); }
+function toggleTheme(){ const cur=localStorage.getItem('satsang_theme')||'system';
+  const next=cur==='system'?'dark':cur==='dark'?'light':'system';
+  localStorage.setItem('satsang_theme',next); applyTheme(next);
+  document.getElementById('themebtn').textContent=next==='dark'?'●':next==='light'?'○':'◐'; }
+(function(){ const t=localStorage.getItem('satsang_theme')||'system'; applyTheme(t);
+  document.getElementById('themebtn').textContent=t==='dark'?'●':t==='light'?'○':'◐'; })();
+
+/* ---- stable ids for multi-turn + long-term memory ---- */
 function id(k){ let v=localStorage.getItem(k); if(!v){ v=k+'-'+Math.random().toString(36).slice(2,10);
   localStorage.setItem(k,v);} return v; }
-let CONV = id('satsang_conv'), USER = id('satsang_user');
+let CONV=id('satsang_conv'), USER=id('satsang_user');
 
 function reset(){ localStorage.removeItem('satsang_conv'); CONV=id('satsang_conv');
-  chat.innerHTML=''; addBot('Tell me what is on your heart. I am here to listen.'); }
+  chat.innerHTML=''; addBot(GREETING); box.focus(); }
 
-function el(cls, html){ const d=document.createElement('div'); d.className=cls; d.innerHTML=html;
-  chat.appendChild(d); chat.scrollTop=chat.scrollHeight; return d; }
-function addUser(t){ el('msg user','<div class="bubble"></div>').querySelector('.bubble').textContent=t; }
-function addBot(t){ const m=el('msg bot','<div class="bubble"></div>'); m.querySelector('.bubble').textContent=t; return m; }
-function esc(s){ return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function autosize(){ box.style.height='auto'; box.style.height=Math.min(box.scrollHeight,160)+'px'; }
+function atBottom(){ return scroller.scrollHeight-scroller.scrollTop-scroller.clientHeight<80; }
+function toBottom(){ scroller.scrollTop=scroller.scrollHeight; }
+function esc(s){ return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function addRow(who){ const r=document.createElement('div'); r.className='row '+who;
+  const b=document.createElement('div'); b.className='bubble'; r.appendChild(b);
+  chat.appendChild(r); toBottom(); return r; }
+function addUser(t){ addRow('user').querySelector('.bubble').textContent=t; }
+function addBot(t){ const r=addRow('bot'); r.querySelector('.bubble').textContent=t; return r; }
+
+/* render final reply text with [P#] tags as clickable citation chips */
+function withChips(row, text, cited){
+  const map={}; (cited||[]).forEach(c=>map[c.tag]=c);
+  const html=esc(text).replace(/\[P(\d+)\]/g,(m,n)=>{
+    const c=map['[P'+n+']']; const bad=c&&c.exists===false;
+    const title=c?esc(c.citation)+(bad?' — unverified':''):'source '+n;
+    return `<a class="cite${bad?' bad':''}" title="${title}" onclick="hl(this,${n})">P${n}</a>`;
+  });
+  row.querySelector('.bubble').innerHTML=html;
+}
+function hl(chipOrN, n){ const row=chipOrN.closest?chipOrN.closest('.row'):null;
+  const det=row&&row.querySelector('.sources'); if(!det) return; det.open=true;
+  const li=det.querySelector('li[data-n="'+n+'"]');
+  if(li){ det.querySelectorAll('li').forEach(x=>x.classList.remove('hl'));
+    li.classList.add('hl'); li.scrollIntoView({block:'nearest',behavior:'smooth'}); } }
 
 async function send(){
-  const text = box.value.trim(); if(!text) return;
-  box.value=''; addUser(text); btn.disabled=true;
-  const meta = el('meta','<span class="dim">…thinking</span>');
-  const botMsg = addBot(''); const bubble = botMsg.querySelector('.bubble');
-  let acc='';
-  try {
-    const resp = await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+  const text=box.value.trim(); if(!text) return;
+  box.value=''; autosize(); addUser(text); btn.disabled=true;
+
+  const row=addBot(''); const bubble=row.querySelector('.bubble');
+  const stages=document.createElement('div'); stages.className='stages';
+  stages.innerHTML='<span class="dot"></span><span>listening…</span>';
+  bubble.after(stages);
+  const setStage=t=>{ stages.querySelector('span:last-child').textContent=t; };
+  let planEl=null, acc='', started=false, passages=[];
+
+  try{
+    const resp=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({message:text, conversation_id:CONV, user_id:USER})});
-    const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf='';
+    if(!resp.ok||!resp.body) throw new Error('bad response');
+    const reader=resp.body.getReader(), dec=new TextDecoder(); let buf='';
     while(true){
-      const {done,value} = await reader.read(); if(done) break;
-      buf += dec.decode(value,{stream:true});
-      const parts = buf.split('\n\n'); buf = parts.pop();
+      const {done,value}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      const parts=buf.split('\n\n'); buf=parts.pop();
       for(const p of parts){
         let ev='message', data='';
         for(const ln of p.split('\n')){
           if(ln.startsWith('event:')) ev=ln.slice(6).trim();
-          else if(ln.startsWith('data:')) data += ln.slice(5).trimStart();
+          else if(ln.startsWith('data:')) data+=ln.slice(5).replace(/^ /,'');
         }
         if(!data) continue; let pl; try{ pl=JSON.parse(data); }catch(e){ continue; }
-        if(ev==='plan'){ meta.innerHTML='<span class="dim">feeling: '+esc(pl.primary_emotion||'')+' · '+esc(pl.mode||'')+'</span>'; }
-        else if(ev==='crisis'){ botMsg.classList.add('crisis'); }
-        else if(ev==='passages'){ botMsg._passages=pl; }
-        else if(ev==='text'){ acc+=pl; bubble.textContent=acc; chat.scrollTop=chat.scrollHeight; }
+        const stick=atBottom();
+
+        if(ev==='plan'){
+          setStage('searching the scriptures…');
+          planEl=document.createElement('div'); planEl.className='plan';
+          const emo=pl.primary_emotion?`<b>${esc(pl.primary_emotion)}</b> · `:'';
+          planEl.innerHTML=emo+esc(pl.mode||'counseling')+' mode';
+          stages.after(planEl);
+        }
+        else if(ev==='crisis'){ row.classList.add('crisis'); setStage('here with you'); }
+        else if(ev==='passages'){ passages=pl; setStage('reflecting…'); }
+        else if(ev==='text'){
+          if(!started){ started=true; stages.remove(); bubble.classList.add('streaming'); }
+          acc+=pl; bubble.textContent=acc; if(stick) toBottom();
+        }
         else if(ev==='done'){
-          const ps = botMsg._passages||[];
-          if(ps.length){
-            const lis = ps.map(x=>'<li>'+esc(x.citation)+' <span class="dim">('+esc(x.tradition)+')</span></li>').join('');
-            const det=document.createElement('details'); det.className='sources';
-            det.innerHTML='<summary>sources ('+ps.length+')</summary><ul>'+lis+'</ul>';
-            botMsg.appendChild(det);
+          bubble.classList.remove('streaming'); stages.remove();
+          if(row.classList.contains('crisis')){ bubble.textContent=acc||bubble.textContent; }
+          else{
+            withChips(row, acc, pl.cited);
+            renderFooter(row, passages, pl);
           }
+          if(stick) toBottom();
         }
       }
     }
-  } catch(e){ bubble.textContent='(connection error — is the server running?)'; }
-  if(!acc && !botMsg.classList.contains('crisis')) bubble.textContent='(no response)';
+  }catch(e){ stages.remove(); bubble.textContent='(Could not reach the server — please try again.)'; }
+  if(!acc && !row.classList.contains('crisis') && !bubble.textContent) bubble.textContent='(no response)';
   btn.disabled=false; box.focus();
 }
-box.focus();
+
+/* grounding status + collapsible sources, with verified badges */
+function renderFooter(row, passages, done){
+  const cited=done.cited||[], unv=done.unverified_refs||[];
+  const citedTags=new Set(cited.map(c=>c.tag));
+  const allV=cited.length && cited.every(c=>c.exists!==false) && !unv.length;
+
+  const g=document.createElement('div'); g.className='ground';
+  if(cited.length){
+    g.innerHTML = allV
+      ? `<span class="ok">✓ verified</span> grounded in ${passages.length} passage${passages.length!=1?'s':''}, ${cited.length} cited`
+      : `<span class="warn">⚠ ${unv.length} unverified reference${unv.length!=1?'s':''}</span> · ${cited.length} cited of ${passages.length}`;
+  } else {
+    g.innerHTML = `<span class="ok">✓</span> spoken from the heart · ${passages.length} passage${passages.length!=1?'s':''} consulted`;
+  }
+  row.appendChild(g);
+
+  if(passages.length){
+    const det=document.createElement('details'); det.className='sources';
+    const items=passages.map(x=>{
+      const n=(x.tag.match(/\d+/)||[''])[0];
+      const isCited=citedTags.has(x.tag);
+      const c=cited.find(c=>c.tag===x.tag);
+      const vbadge=isCited?(c&&c.exists===false?'<span class="badge">unverified</span>':'<span class="badge v">✓ cited</span>'):'';
+      return `<li data-n="${n}"><span class="tag">${esc(x.tag)}</span>`+
+             `<span class="cit">${esc(x.citation)}</span>`+
+             `<span class="badge trad">${esc((x.tradition||'').replace('_',' '))}</span>${vbadge}</li>`;
+    }).join('');
+    det.innerHTML=`<summary>the passages consulted (${passages.length})</summary><ol>${items}</ol>`;
+    row.appendChild(det);
+  }
+
+  const excl=(done.memory&&done.memory.excluded)||[];
+  if(excl.length){
+    const pv=document.createElement('div'); pv.className='privacy';
+    pv.innerHTML=`🔒 ${excl.length} sensitive detail${excl.length!=1?'s':''} kept private — not saved to memory.`;
+    row.appendChild(pv);
+  }
+}
+
+addBot(GREETING); autosize(); box.focus();
 </script>
 </body>
 </html>
