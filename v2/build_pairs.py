@@ -19,7 +19,10 @@ so the data schema, seeds, and negatives are all testable before any GPU/spend.
 from __future__ import annotations
 
 import argparse
+import json
 import random
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from api import config
 from api.retrieve_types import Passage
@@ -44,39 +47,73 @@ def chosen_placeholder(problem: str, passages: list[Passage], rng: random.Random
     )
 
 
-CHOSEN = {"placeholder": chosen_placeholder}
+def _make_pair(problem: str, passages: list[Passage], row_id: str,
+               chosen: str, chosen_kind: str, rng: random.Random) -> PreferencePair:
+    rejected, flaw = reject.make_rejected(chosen, passages, rng)
+    return PreferencePair(
+        problem=problem, context=context_from_passages(passages),
+        chosen=chosen, rejected=rejected, flaw=flaw,
+        pair_source="scripture_derived", grounding_ids=[row_id],
+        meta={"chosen_kind": chosen_kind, "tradition": passages[0].tradition,
+              "source": passages[0].source})
 
 
-def build(n: int, chosen_kind: str, seed: int, out: str) -> None:
-    if chosen_kind not in CHOSEN:
-        raise SystemExit(
-            f"--chosen {chosen_kind} not wired yet (offline/GPU step). "
-            f"Available now: {sorted(CHOSEN)}. See module docstring.")
-    gen = CHOSEN[chosen_kind]
+def _done_ids(out: Path) -> set[str]:
+    """Resume support: grounding-ids already written to `out`."""
+    if not out.exists():
+        return set()
+    ids = set()
+    for line in out.read_text().splitlines():
+        if line.strip():
+            ids.update(json.loads(line).get("grounding_ids", []))
+    return ids
+
+
+def build_offline(n: int, chosen_kind: str, seed: int, out: str,
+                  model: str, workers: int) -> None:
+    """Claude-bootstrapped `chosen` (offline gold), verifier-gated, resumable, concurrent."""
+    import anthropic
+    from v2 import chosen as chosen_mod
+    outp = Path(out)
+    done = _done_ids(outp)
+    all_seeds = seeds.sample_seeds(str(config.INDEX_PATH), n, seed)
+    todo = [s for s in all_seeds if s[2] not in done]
+    print(f"chosen={chosen_kind} model={model} | {len(all_seeds)} seeds, "
+          f"{len(done)} already done, {len(todo)} to generate, {workers} workers")
+    client = anthropic.Anthropic()
+    outp.parent.mkdir(parents=True, exist_ok=True)
+
+    kept = dropped = 0
+    with outp.open("a") as fh, ThreadPoolExecutor(max_workers=workers) as ex:
+        def work(item):
+            problem, passages, row_id = item
+            reply = chosen_mod.generate_claude(problem, passages, client, model)
+            return item, reply
+        for (problem, passages, row_id), reply in ex.map(work, todo):
+            if not reply:                                   # failed the verifier gate
+                dropped += 1
+                continue
+            pair = _make_pair(problem, passages, row_id, reply, chosen_kind,
+                              random.Random(hash(row_id) & 0xffffffff))
+            fh.write(json.dumps(pair.to_json(), ensure_ascii=False) + "\n")
+            fh.flush()
+            kept += 1
+            if (kept + dropped) % 50 == 0:
+                print(f"  ...{kept} kept / {dropped} dropped")
+    print(f"done: {kept} pairs appended -> {outp} ({dropped} dropped by verifier gate)")
+
+
+def build_placeholder(n: int, seed: int, out: str) -> None:
+    """Templated grounded `chosen` — CPU, no API. For pipeline smoke tests only."""
     rng = random.Random(seed)
-    pairs: list[PreferencePair] = []
-    for problem, passages, row_id in seeds.sample_seeds(str(config.INDEX_PATH), n, seed):
-        chosen = gen(problem, passages, rng)
-        rejected, flaw = reject.make_rejected(chosen, passages, rng)
-        pairs.append(PreferencePair(
-            problem=problem,
-            context=context_from_passages(passages),
-            chosen=chosen,
-            rejected=rejected,
-            flaw=flaw,
-            pair_source="scripture_derived",
-            grounding_ids=[row_id],
-            meta={"chosen_kind": chosen_kind, "tradition": passages[0].tradition,
-                  "source": passages[0].source},
-        ))
+    pairs = [_make_pair(problem, passages, row_id,
+                        chosen_placeholder(problem, passages, rng), "placeholder", rng)
+             for problem, passages, row_id in seeds.sample_seeds(str(config.INDEX_PATH), n, seed)]
     path = write_jsonl(pairs, out)
-    # quick distribution report
     from collections import Counter
-    flaws = Counter(p.flaw for p in pairs)
-    trads = Counter(p.meta["tradition"] for p in pairs)
     print(f"wrote {len(pairs)} pairs -> {path}")
-    print("  flaw mix     :", dict(flaws))
-    print("  tradition mix:", dict(trads))
+    print("  flaw mix     :", dict(Counter(p.flaw for p in pairs)))
+    print("  tradition mix:", dict(Counter(p.meta["tradition"] for p in pairs)))
 
 
 def main() -> None:
@@ -85,8 +122,18 @@ def main() -> None:
     ap.add_argument("--chosen", default="placeholder", help="placeholder | claude | gemma")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="v2/data/pairs_sample.jsonl")
+    ap.add_argument("--model", default="claude-sonnet-4-6", help="chosen=claude generation model")
+    ap.add_argument("--workers", type=int, default=8, help="concurrent Claude calls (chosen=claude)")
     a = ap.parse_args()
-    build(a.n, a.chosen, a.seed, a.out)
+    if a.chosen == "placeholder":
+        build_placeholder(a.n, a.seed, a.out)
+    elif a.chosen == "claude":
+        build_offline(a.n, a.chosen, a.seed, a.out, a.model, a.workers)
+    elif a.chosen == "gemma":
+        raise SystemExit("--chosen gemma (strict Claude-free self-gen) needs an SFT adapter "
+                         "first — bootstrap with --chosen claude, SFT, then wire gemma self-gen.")
+    else:
+        raise SystemExit(f"unknown --chosen {a.chosen}")
 
 
 if __name__ == "__main__":

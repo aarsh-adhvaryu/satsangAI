@@ -20,8 +20,9 @@ from api.retrieve_types import Passage
 _LEAD = re.compile(
     r"(?i)^.*?\b(help\w*|useful|valuable|comforting|relevant)\b"
     r"(?:\s+\w+){0,3}?\s+(when|for|if|to|during|in|while)\s+")
-# third-person subjects some rows use ("someone feels", "a person is") -> first person
-_SUBJ = [(r"\b(someone|a person|a devotee|one|people|they)\b\s+", "I ", re.I)]
+# third-person subjects some rows use ("someone feels", "a person is") -> first person.
+# NB: no bare "one" — it wrongly matches "loved one", "no one", "each one".
+_SUBJ = [(r"\b(someone|a person|a devotee|people|they)\b\s+", "I ", re.I)]
 _YOU = [(r"\byou are\b", "I am"), (r"\byou're\b", "I'm"), (r"\byou feel\b", "I feel"),
         (r"\byourself\b", "myself"), (r"\byour\b", "my"), (r"\byou\b", "I")]
 # 3rd-person-singular -> 1st-person verb agreement for the verbs common in this field
@@ -48,6 +49,10 @@ def _to_first_person(when_this_helps: str) -> str:
         s = re.sub(pat, repl, s, flags=re.I)
     for pat, repl in _AGREE:                        # fix "I feels" -> "I feel", etc.
         s = pat.sub(repl, s)
+    # object-position pronoun: "understands I" -> "understands me" (transitive verbs)
+    s = re.sub(r"\b(understand|help|guide|support|comfort|love|hurt|betray|abandon|teach|"
+               r"remind|push|challenge|judge|criticize|attack|surround|overwhelm)(s|es)?\s+I\b",
+               r"\1\2 me", s, flags=re.I)
     s = re.sub(r"\btheir\b", "my", s, flags=re.I)
     s = re.sub(r"\bone's\b", "my", s, flags=re.I)
     s = re.sub(r"(^|\s)i(\s|$|,|\.)", r"\1I\2", s)   # capitalize standalone pronoun "i"
