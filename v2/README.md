@@ -70,9 +70,17 @@ python -c "import v2.tests.test_pipeline as t; [getattr(t,f)() for f in dir(t) i
 The tuners are staged and compile-checked; the CPU data-prep path is verified. They
 only load the model inside `main()`, so nothing touches CUDA until you launch them.
 
-- `train_config.py` — shared QLoRA config + the **QLoRA accuracy-tradeoff writeup**
-  (why rank 32 / alpha 64, NF4 + double-quant + bf16, all attn+MLP targets, eval
-  split, and the conservative DPO knobs). Reference this before running.
+**Max quality on H100 / RTX PRO 6000.** With 80–96 GB we don't accept the QLoRA
+accuracy tradeoff at all: the default is **full-precision bf16 LoRA (no 4-bit)** —
+26B in bf16 is ~52 GB, which fits — so there's **no quantization error**. `--precision
+4bit` remains only as an OOM fallback. Capacity is high (**LoRA rank 64 / alpha 128**,
+all attn+MLP). The config is **hardware-aware**: on **H100 (Hopper)** it uses the fast
+`grouped_mm` MoE kernel; on **Blackwell** it auto-switches to `eager` (torch 2.8's
+grouped_mm is Hopper-only). TF32 + SDPA on. Raise `--bs` to fill the card (`--smoke`
+first to find the max micro-batch; 96 GB Blackwell fits more than 80 GB H100).
+
+- `train_config.py` — shared config + the **precision / accuracy writeup** (bf16-first,
+  rank 64, hardware-aware MoE kernel, eval split, conservative DPO knobs). Read before running.
 - `sft_train.py` — **Step 1: QLoRA SFT** on the faithful `chosen` replies
   (completion-only loss, eval split, best-checkpoint). Establishes persona + grounding.
 - `dpo_train.py` — **Step 2: QLoRA DPO** on the pairs, continuing from the SFT
@@ -84,11 +92,11 @@ only load the model inside `main()`, so nothing touches CUDA until you launch th
 ```bash
 # 0. generate real `chosen` (offline) and write the real pairs file:
 python -m v2.build_pairs --n 5000 --chosen claude --out v2/data/pairs.jsonl   # OR --chosen gemma
-# 1. de-risk the stack (few steps, tiny data):
-python -m v2.sft_train --smoke   &&   python -m v2.dpo_train --smoke
-# 2. real runs:
-python -m v2.sft_train --data v2/data/pairs.jsonl --epochs 3
-python -m v2.dpo_train --data v2/data/pairs.jsonl --sft v2/data/gemma4-v2-sft-lora
+# 1. de-risk the stack + find the max micro-batch that fits (few steps, tiny data):
+python -m v2.sft_train --smoke --bs 4   &&   python -m v2.dpo_train --smoke --bs 2
+# 2. real runs (bf16 max-quality by default; push --bs up to fill the GPU):
+python -m v2.sft_train --data v2/data/pairs.jsonl --epochs 3 --bs 4 --ga 8
+python -m v2.dpo_train --data v2/data/pairs.jsonl --sft v2/data/gemma4-v2-sft-lora --bs 2 --ga 8
 # 3. 6-gate eval (§20.3) before any deploy — extend eval/:
 #    hallucination · persona · sycophancy · emotional-appropriateness · scripture-accuracy · RAGAS
 ```

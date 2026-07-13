@@ -26,8 +26,12 @@ def main() -> None:
     ap.add_argument("--data", default=str(C.PAIRS))
     ap.add_argument("--sft", default=str(C.SFT_OUT), help="SFT LoRA adapter to continue from")
     ap.add_argument("--epochs", type=float, default=1)     # DPO overfits fast
-    ap.add_argument("--lr", type=float, default=5e-6)      # DPO: ~40x lower than SFT
+    ap.add_argument("--lr", type=float, default=5e-6)      # DPO: ~20-40x lower than SFT
     ap.add_argument("--beta", type=float, default=0.1)     # KL strength to the SFT ref
+    ap.add_argument("--precision", default="bf16", choices=["bf16", "4bit"],
+                    help="bf16 = max quality (default); 4bit = QLoRA OOM fallback")
+    ap.add_argument("--bs", type=int, default=1, help="per-device micro-batch (DPO ~2x mem)")
+    ap.add_argument("--ga", type=int, default=16, help="grad-accum (effective batch = bs*ga)")
     ap.add_argument("--out", default=str(C.DPO_OUT))
     ap.add_argument("--smoke", action="store_true")
     a = ap.parse_args()
@@ -35,7 +39,9 @@ def main() -> None:
     from peft import PeftModel
     from trl import DPOConfig, DPOTrainer
 
-    base, tok = C.load_base()
+    C.tune_runtime()                                       # TF32 + report GPU/MoE kernel
+    base, tok = C.load_base(a.precision)
+    base = C.prepare_for_training(base, a.precision)
     # Load the SFT adapter as the trainable policy; DPOTrainer uses the same adapter
     # DISABLED as the frozen reference (ref_model=None + a PEFT policy).
     model = PeftModel.from_pretrained(base, a.sft, is_trainable=True)
@@ -48,7 +54,7 @@ def main() -> None:
 
     cfg = DPOConfig(
         output_dir=a.out, num_train_epochs=a.epochs,
-        per_device_train_batch_size=1, gradient_accumulation_steps=16,   # eff. batch 16
+        per_device_train_batch_size=a.bs, gradient_accumulation_steps=a.ga,
         learning_rate=a.lr, warmup_ratio=0.1, lr_scheduler_type="cosine",
         beta=a.beta, loss_type="sigmoid", max_length=C.MAX_LEN,
         precompute_ref_log_probs=True,                                   # ref = adapter-disabled

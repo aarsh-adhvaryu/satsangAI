@@ -20,7 +20,11 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=str(C.PAIRS))
     ap.add_argument("--epochs", type=float, default=3)
-    ap.add_argument("--lr", type=float, default=1e-4)     # SFT: standard QLoRA LR
+    ap.add_argument("--lr", type=float, default=1e-4)     # SFT: standard LoRA LR
+    ap.add_argument("--precision", default="bf16", choices=["bf16", "4bit"],
+                    help="bf16 = max quality (default); 4bit = QLoRA OOM fallback")
+    ap.add_argument("--bs", type=int, default=2, help="per-device micro-batch — raise to fill VRAM")
+    ap.add_argument("--ga", type=int, default=16, help="grad-accum (effective batch = bs*ga)")
     ap.add_argument("--out", default=str(C.SFT_OUT))
     ap.add_argument("--smoke", action="store_true")
     a = ap.parse_args()
@@ -28,7 +32,9 @@ def main() -> None:
     from peft import get_peft_model
     from trl import SFTConfig, SFTTrainer
 
-    model, tok = C.load_base()
+    C.tune_runtime()                                       # TF32 + report GPU/MoE kernel
+    model, tok = C.load_base(a.precision)
+    model = C.prepare_for_training(model, a.precision)
     model = get_peft_model(model, C.lora_config(model))
     model.print_trainable_parameters()
 
@@ -40,7 +46,7 @@ def main() -> None:
 
     cfg = SFTConfig(
         output_dir=a.out, num_train_epochs=a.epochs,
-        per_device_train_batch_size=1, gradient_accumulation_steps=16,   # eff. batch 16
+        per_device_train_batch_size=a.bs, gradient_accumulation_steps=a.ga,
         learning_rate=a.lr, warmup_ratio=0.03, lr_scheduler_type="cosine",
         bf16=True, max_length=C.MAX_LEN, completion_only_loss=True, packing=False,
         gradient_checkpointing=True, gradient_checkpointing_kwargs={"use_reentrant": False},
