@@ -15,5 +15,11 @@ enrichment/data/*.f32
 api/data/*.parquet
 api/data/memory/
 eval/last_results.json
+
+# V2 DPO data — LoRA adapters + regenerable sample pairs (real gold pairs, if
+# generated, should be force-added like enrichment/data/gold.jsonl).
+v2/data/*-lora/
+v2/data/pairs_sample.jsonl
+enrichment/data/audit_bad_ids.txt
 docker-compose env
 .env
