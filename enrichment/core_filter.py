@@ -20,12 +20,17 @@ def load_manifest(path: Path | str = CONFIG) -> dict:
 
 def core_mask(df: pd.DataFrame, manifest: dict | None = None) -> pd.Series:
     """Boolean mask selecting the Tier-1 counseling core: the home-tradition rows
-    plus the explicitly listed shared_hindu sources."""
+    plus the explicitly listed shared_hindu sources, minus any `excluded_ids`
+    (individual non-scripture chunks that slipped in — see counseling_core.yaml)."""
     m = manifest or load_manifest()
     core = m["core"]
     trad = set(core.get("traditions") or [])
     srcs = set(core.get("sources") or [])
-    return df["tradition"].isin(trad) | df["source"].isin(srcs)
+    mask = df["tradition"].isin(trad) | df["source"].isin(srcs)
+    excluded = set(m.get("excluded_ids") or [])
+    if excluded:
+        mask &= ~df["id"].isin(excluded)
+    return mask
 
 
 def select_core(df: pd.DataFrame, manifest: dict | None = None) -> pd.DataFrame:

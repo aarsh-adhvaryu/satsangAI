@@ -70,3 +70,24 @@ excluded_narrative:
   - rigveda
   - yajurveda
   - atharvaveda
+
+# Individual non-scripture front/back-matter chunks that slipped into the core
+# (OCR of prefaces, pronunciation/abbreviation keys, a library circulation slip).
+# Found by enrichment/audit_kb.py — the enrichment itself flagged them as
+# "not a scriptural teaching". Dropped from the counseling core so they never
+# surface as retrieval passages. (Enrichment data left intact in the KB.)
+excluded_ids:
+  - satsang_diksha_e5254e.9.p24-26                                    # transliteration/pronunciation guide
+  - sw_lit_ghanshyam-charitra_077710.63.p101                         # glossary of terms
+  - sw_lit_brahmaswarup-shri-pragji-bhakta-life-and-work_13a090.771.p794  # index of names
+  - sw_lit_gunatitanand-swami-life---work-part-1_e88fa3.6.p14-15     # translator's preface
+  - sw_lit_invaluable-scriptures-of-brahmavidya_6f2cb2.237.p279-280  # bibliography + glossary page
+  - sw_lit_royal-path-of-brahmavidya-sadhana_e19b85.8.p14            # technical preface (writing conventions)
+  - swaminarayan_bhashyam_56adcd.14.p24                             # technical note (Sanskrit presentation)
+  - swaminarayan_bhashyam_56adcd.15.p25                             # list of abbreviations
+  - subbarao_gita_commentary_85fd5a.1.p4                            # translator's preface
+  - sw_lit_pragji-bhakta-jivan-charitra_92b2dd.607.p630-631         # index of names
+  - upanishads_441297.757.p773                                     # index page (verse locations)
+  - upanishads_441297.764.p782                                     # errata (textual corrections)
+  - upanishads_441297.767.p786-789                                 # bibliographic index / publications list
+  - upanishads_441297.769.p792-793                                 # library circulation slip / loan rules
