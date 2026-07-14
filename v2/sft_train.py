@@ -12,6 +12,7 @@ eval split). See its docstring for the QLoRA tradeoff reasoning.
 from __future__ import annotations
 
 import argparse
+import os
 
 from v2 import train_config as C
 
@@ -58,7 +59,13 @@ def main() -> None:
     trainer = SFTTrainer(model=model, args=cfg,
                          train_dataset=train_ds, eval_dataset=eval_ds,
                          processing_class=tok)
-    trainer.train()
+    # Auto-resume: if a prior run left checkpoints in --out, continue from the last
+    # one (restores optimizer/scheduler/RNG/step). Re-run the same command to resume.
+    from transformers.trainer_utils import get_last_checkpoint
+    ckpt = get_last_checkpoint(a.out) if (not a.smoke and os.path.isdir(a.out)) else None
+    if ckpt:
+        print(f"resuming SFT from checkpoint: {ckpt}")
+    trainer.train(resume_from_checkpoint=ckpt)
     trainer.save_model(a.out)
     tok.save_pretrained(a.out)
     print(f"saved SFT LoRA adapter -> {a.out}")

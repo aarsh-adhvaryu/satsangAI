@@ -21,7 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from api import config
@@ -59,13 +59,19 @@ def _make_pair(problem: str, passages: list[Passage], row_id: str,
 
 
 def _done_ids(out: Path) -> set[str]:
-    """Resume support: grounding-ids already written to `out`."""
+    """Resume support: grounding-ids already written to `out`. Tolerates a
+    truncated final line from a hard crash mid-write (skips unparseable lines)."""
     if not out.exists():
         return set()
     ids = set()
     for line in out.read_text().splitlines():
-        if line.strip():
+        line = line.strip()
+        if not line:
+            continue
+        try:
             ids.update(json.loads(line).get("grounding_ids", []))
+        except json.JSONDecodeError:
+            continue                                    # partial/corrupt line — ignore
     return ids
 
 
@@ -83,13 +89,19 @@ def build_offline(n: int, chosen_kind: str, seed: int, out: str,
     client = anthropic.Anthropic()
     outp.parent.mkdir(parents=True, exist_ok=True)
 
+    def work(item):
+        problem, passages, row_id = item
+        reply = chosen_mod.generate_claude(problem, passages, client, model)
+        return item, reply
+
     kept = dropped = 0
+    # Write each pair the moment it finishes (as_completed, not map) so a crash
+    # loses at most the in-flight calls, never completed-but-unyielded ones. Each
+    # line is a full flush -> append-only file is always resume-safe.
     with outp.open("a") as fh, ThreadPoolExecutor(max_workers=workers) as ex:
-        def work(item):
-            problem, passages, row_id = item
-            reply = chosen_mod.generate_claude(problem, passages, client, model)
-            return item, reply
-        for (problem, passages, row_id), reply in ex.map(work, todo):
+        futures = [ex.submit(work, it) for it in todo]
+        for fut in as_completed(futures):
+            (problem, passages, row_id), reply = fut.result()
             if not reply:                                   # failed the verifier gate
                 dropped += 1
                 continue
@@ -99,8 +111,9 @@ def build_offline(n: int, chosen_kind: str, seed: int, out: str,
             fh.flush()
             kept += 1
             if (kept + dropped) % 50 == 0:
-                print(f"  ...{kept} kept / {dropped} dropped")
-    print(f"done: {kept} pairs appended -> {outp} ({dropped} dropped by verifier gate)")
+                print(f"  ...{kept} kept / {dropped} dropped", flush=True)
+    print(f"done: {kept} pairs appended -> {outp} ({dropped} dropped by verifier gate). "
+          f"Re-run the same command to resume/top-up.")
 
 
 def build_placeholder(n: int, seed: int, out: str) -> None:

@@ -17,6 +17,7 @@ and we watch eval reward-accuracy / margins on a held-out split.
 from __future__ import annotations
 
 import argparse
+import os
 
 from v2 import train_config as C
 
@@ -69,7 +70,12 @@ def main() -> None:
     trainer = DPOTrainer(model=model, ref_model=None, args=cfg,
                          train_dataset=train_ds, eval_dataset=eval_ds,
                          processing_class=tok)
-    trainer.train()
+    # Auto-resume from the last checkpoint in --out if a prior run was interrupted.
+    from transformers.trainer_utils import get_last_checkpoint
+    ckpt = get_last_checkpoint(a.out) if (not a.smoke and os.path.isdir(a.out)) else None
+    if ckpt:
+        print(f"resuming DPO from checkpoint: {ckpt}")
+    trainer.train(resume_from_checkpoint=ckpt)
     trainer.save_model(a.out)
     tok.save_pretrained(a.out)
     print(f"saved DPO LoRA adapter -> {a.out}")

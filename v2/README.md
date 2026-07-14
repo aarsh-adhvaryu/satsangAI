@@ -101,6 +101,19 @@ python -m v2.dpo_train --data v2/data/pairs.jsonl --sft v2/data/gemma4-v2-sft-lo
 #    hallucination · persona · sycophancy · emotional-appropriateness · scripture-accuracy · RAGAS
 ```
 
+### Resumability (every phase — just re-run the same command)
+
+The whole pipeline survives a crash/preemption without redoing finished work:
+- **Pair generation** appends each verified pair to `pairs.jsonl` and flushes immediately
+  (writes as-completed, so only in-flight Claude calls are lost). Re-running
+  `build_pairs … --out v2/data/pairs.jsonl` skips every grounding-id already written and
+  tops up the rest; a truncated final line from a hard kill is tolerated.
+- **SFT and DPO** checkpoint every 25 steps and **auto-resume from the last checkpoint**
+  in their `--out` dir (optimizer + scheduler + RNG + step restored). Re-run the identical
+  command to continue. ⚠️ Don't delete the `v2/data/gemma4-v2-*-lora/` dirs between runs —
+  they hold the checkpoints. The HF model cache under `$HF_HOME` also means the 52 GB base
+  weights download only once.
+
 ### Watch-items for the GPU run
 - **`chosen` source first** — pick `--chosen claude` (bootstrap, offline gold) or the
   strict-pure `--chosen gemma` (needs an initial SFT to self-generate). Optionally have
