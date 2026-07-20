@@ -37,7 +37,7 @@ def main() -> None:
     ap.add_argument("--smoke", action="store_true")
     a = ap.parse_args()
 
-    from peft import PeftModel
+    from peft import PeftModel, get_peft_model
     from trl import DPOConfig, DPOTrainer
 
     # Smoke runs write to a throwaway dir so they never pollute the real adapter dir.
@@ -48,7 +48,14 @@ def main() -> None:
     base = C.prepare_for_training(base, a.precision)
     # Load the SFT adapter as the trainable policy; DPOTrainer uses the same adapter
     # DISABLED as the frozen reference (ref_model=None + a PEFT policy).
-    model = PeftModel.from_pretrained(base, a.sft, is_trainable=True)
+    if os.path.isfile(os.path.join(a.sft, "adapter_config.json")):
+        model = PeftModel.from_pretrained(base, a.sft, is_trainable=True)
+    elif a.smoke:
+        # de-risk the DPO stack before SFT has produced an adapter
+        print(f"[smoke] no SFT adapter at {a.sft} - using a fresh LoRA")
+        model = get_peft_model(base, C.lora_config(base))
+    else:
+        raise SystemExit(f"no SFT adapter at {a.sft} - run `python -m v2.sft_train` first")
 
     train_ds, eval_ds = C.dpo_dataset(tok, a.data)
     if a.smoke:
@@ -59,6 +66,8 @@ def main() -> None:
     cfg = DPOConfig(
         output_dir=out, num_train_epochs=a.epochs,
         per_device_train_batch_size=a.bs, gradient_accumulation_steps=a.ga,
+        per_device_eval_batch_size=1,          # same OOM guard as SFT
+
         learning_rate=a.lr, warmup_ratio=0.1, lr_scheduler_type="cosine",
         beta=a.beta, loss_type="sigmoid", max_length=C.MAX_LEN,
         # Ref logprobs computed inline with the adapter disabled. NOT precomputed:
@@ -69,8 +78,8 @@ def main() -> None:
         precompute_ref_log_probs=False,
         bf16=True, gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
-        logging_steps=5, eval_strategy="steps", eval_steps=25,
-        save_strategy="steps", save_steps=25, save_total_limit=2,
+        logging_steps=5, eval_strategy="steps", eval_steps=50,
+        save_strategy="steps", save_steps=50, save_total_limit=2,
         load_best_model_at_end=True, metric_for_best_model="eval_rewards/accuracies",
         greater_is_better=True,
         report_to="none", max_steps=6 if a.smoke else -1)

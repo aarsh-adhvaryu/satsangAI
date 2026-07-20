@@ -52,11 +52,15 @@ def main() -> None:
     cfg = SFTConfig(
         output_dir=out, num_train_epochs=a.epochs,
         per_device_train_batch_size=a.bs, gradient_accumulation_steps=a.ga,
+        # eval batch MUST be small: HF defaults to 8, and [8 x seq x vocab] logits
+        # upcast to fp32 OOMs on top of the 52 GB bf16 base. Loss-only eval also
+        # avoids accumulating logits across eval batches.
+        per_device_eval_batch_size=1, prediction_loss_only=True,
         learning_rate=a.lr, warmup_ratio=0.03, lr_scheduler_type="cosine",
         bf16=True, max_length=C.MAX_LEN, completion_only_loss=True, packing=False,
         gradient_checkpointing=True, gradient_checkpointing_kwargs={"use_reentrant": False},
-        logging_steps=5, eval_strategy="steps", eval_steps=25,
-        save_strategy="steps", save_steps=25, save_total_limit=2,
+        logging_steps=5, eval_strategy="steps", eval_steps=50,
+        save_strategy="steps", save_steps=50, save_total_limit=2,
         load_best_model_at_end=True, metric_for_best_model="eval_loss", greater_is_better=False,
         report_to="none", max_steps=6 if a.smoke else -1)
 
