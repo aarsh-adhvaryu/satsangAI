@@ -40,6 +40,9 @@ def main() -> None:
     from peft import PeftModel
     from trl import DPOConfig, DPOTrainer
 
+    # Smoke runs write to a throwaway dir so they never pollute the real adapter dir.
+    out = f"{a.out}-smoke" if a.smoke else a.out
+
     C.tune_runtime()                                       # TF32 + report GPU/MoE kernel
     base, tok = C.load_base(a.precision)
     base = C.prepare_for_training(base, a.precision)
@@ -54,11 +57,16 @@ def main() -> None:
     print(f"DPO on {len(train_ds)} train / {len(eval_ds)} eval pairs | beta={a.beta}")
 
     cfg = DPOConfig(
-        output_dir=a.out, num_train_epochs=a.epochs,
+        output_dir=out, num_train_epochs=a.epochs,
         per_device_train_batch_size=a.bs, gradient_accumulation_steps=a.ga,
         learning_rate=a.lr, warmup_ratio=0.1, lr_scheduler_type="cosine",
         beta=a.beta, loss_type="sigmoid", max_length=C.MAX_LEN,
-        precompute_ref_log_probs=True,                                   # ref = adapter-disabled
+        # Ref logprobs computed inline with the adapter disabled. NOT precomputed:
+        # trl's precompute path writes an arrow cache file, but HF datasets skips
+        # cache writes for in-memory (from_list) datasets, so trl's read-back
+        # FileNotFoundErrors. At 1 epoch precompute saves ~nothing anyway (same
+        # single ref pass, just spread across steps).
+        precompute_ref_log_probs=False,
         bf16=True, gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         logging_steps=5, eval_strategy="steps", eval_steps=25,
@@ -72,13 +80,13 @@ def main() -> None:
                          processing_class=tok)
     # Auto-resume from the last checkpoint in --out if a prior run was interrupted.
     from transformers.trainer_utils import get_last_checkpoint
-    ckpt = get_last_checkpoint(a.out) if (not a.smoke and os.path.isdir(a.out)) else None
+    ckpt = get_last_checkpoint(out) if (not a.smoke and os.path.isdir(out)) else None
     if ckpt:
         print(f"resuming DPO from checkpoint: {ckpt}")
     trainer.train(resume_from_checkpoint=ckpt)
-    trainer.save_model(a.out)
-    tok.save_pretrained(a.out)
-    print(f"saved DPO LoRA adapter -> {a.out}")
+    trainer.save_model(out)
+    tok.save_pretrained(out)
+    print(f"saved DPO LoRA adapter -> {out}")
 
 
 if __name__ == "__main__":

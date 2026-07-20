@@ -33,6 +33,10 @@ def main() -> None:
     from peft import get_peft_model
     from trl import SFTConfig, SFTTrainer
 
+    # Smoke runs write to a throwaway dir so they never leave a junk 6-step adapter
+    # (or stale checkpoints) in the real --out that the DPO stage would then load.
+    out = f"{a.out}-smoke" if a.smoke else a.out
+
     C.tune_runtime()                                       # TF32 + report GPU/MoE kernel
     model, tok = C.load_base(a.precision)
     model = C.prepare_for_training(model, a.precision)
@@ -46,7 +50,7 @@ def main() -> None:
     print(f"SFT on {len(train_ds)} train / {len(eval_ds)} eval examples")
 
     cfg = SFTConfig(
-        output_dir=a.out, num_train_epochs=a.epochs,
+        output_dir=out, num_train_epochs=a.epochs,
         per_device_train_batch_size=a.bs, gradient_accumulation_steps=a.ga,
         learning_rate=a.lr, warmup_ratio=0.03, lr_scheduler_type="cosine",
         bf16=True, max_length=C.MAX_LEN, completion_only_loss=True, packing=False,
@@ -62,13 +66,13 @@ def main() -> None:
     # Auto-resume: if a prior run left checkpoints in --out, continue from the last
     # one (restores optimizer/scheduler/RNG/step). Re-run the same command to resume.
     from transformers.trainer_utils import get_last_checkpoint
-    ckpt = get_last_checkpoint(a.out) if (not a.smoke and os.path.isdir(a.out)) else None
+    ckpt = get_last_checkpoint(out) if (not a.smoke and os.path.isdir(out)) else None
     if ckpt:
         print(f"resuming SFT from checkpoint: {ckpt}")
     trainer.train(resume_from_checkpoint=ckpt)
-    trainer.save_model(a.out)
-    tok.save_pretrained(a.out)
-    print(f"saved SFT LoRA adapter -> {a.out}")
+    trainer.save_model(out)
+    tok.save_pretrained(out)
+    print(f"saved SFT LoRA adapter -> {out}")
 
 
 if __name__ == "__main__":
