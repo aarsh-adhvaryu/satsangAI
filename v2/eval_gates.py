@@ -136,7 +136,11 @@ def score(gate: str, reply: str, passages) -> tuple[bool, str]:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--adapters", default="sft,dpo", help="comma list: sft,dpo")
+    ap.add_argument("--adapters", default="sft,dpo", help="comma list of labels to compare")
+    ap.add_argument("--sft-path", default=None, help="override path for the 'sft' label")
+    ap.add_argument("--dpo-path", default=None, help="override path for the 'dpo' label")
+    ap.add_argument("--extra", default=None,
+                    help="extra adapter as label=path (e.g. dpo2=v2/data/gemma4-v2-dpo2-lora)")
     ap.add_argument("--max-new-tokens", type=int, default=320)
     ap.add_argument("--out", default="v2/data/gate_results.json")
     a = ap.parse_args()
@@ -149,7 +153,15 @@ def main() -> None:
     from v2.schema import context_from_passages
 
     names = [s.strip() for s in a.adapters.split(",") if s.strip()]
-    paths = {"sft": str(C.SFT_OUT), "dpo": str(C.DPO_OUT)}
+    paths = {"sft": a.sft_path or str(C.SFT_OUT), "dpo": a.dpo_path or str(C.DPO_OUT)}
+    if a.extra:
+        label, _, path = a.extra.partition("=")
+        paths[label.strip()] = path.strip()
+        if label.strip() not in names:
+            names.append(label.strip())
+    missing = [n for n in names if n not in paths]
+    if missing:
+        raise SystemExit(f"no path for adapter label(s) {missing} — use --extra label=path")
 
     C.tune_runtime()
     base, tok = C.load_base("bf16")
