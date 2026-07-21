@@ -59,14 +59,29 @@ def detect_gpu() -> dict:
             "vram_gb": round(props.total_memory / 1e9, 1)}
 
 
-def tune_runtime() -> dict:
-    """TF32 matmul + report the GPU. Call once at the top of each tuner's main()."""
+BF16_WEIGHTS_GB = 52.0          # ~26B params x 2 bytes
+
+
+def tune_runtime(require_free_gb: float | None = BF16_WEIGHTS_GB) -> dict:
+    """TF32 matmul + report the GPU, and fail fast if another process is squatting
+    on the card. Without this, a second concurrent run dies deep inside
+    from_pretrained with a confusing 'tried to allocate 48 GiB' OOM."""
     import torch
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     gpu = detect_gpu()
     print(f"GPU: {gpu['name']} (cc {gpu['cc'][0]}.{gpu['cc'][1]}, {gpu['vram_gb']} GB) | "
           f"MoE kernel: {'grouped_mm (fast)' if gpu['is_hopper'] else 'eager'}")
+    if torch.cuda.is_available() and require_free_gb:
+        free_b, total_b = torch.cuda.mem_get_info()
+        free = free_b / 1e9
+        print(f"VRAM free: {free:.1f} GB / {total_b / 1e9:.1f} GB")
+        if free < require_free_gb:
+            raise SystemExit(
+                f"\nABORT: only {free:.1f} GB free, need ~{require_free_gb:.0f} GB for the "
+                f"bf16 base.\nAnother job is almost certainly still using this GPU — check:\n"
+                f"    nvidia-smi --query-compute-apps=pid,used_memory --format=csv\n"
+                f"Wait for it to finish (these scripts are resumable), or stop it, then re-run.")
     return gpu
 
 
