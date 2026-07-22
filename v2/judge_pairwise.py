@@ -63,13 +63,22 @@ def _client():
 
 def _judge_once(problem: str, passages_block: str, r1: str, r2: str) -> dict:
     content = (f"USER MESSAGE:\n{problem}\n\nRETRIEVED PASSAGES:\n{passages_block}\n\n"
-               f"RESPONSE 1:\n{r1}\n\n---\n\nRESPONSE 2:\n{r2}")
-    resp = _client().messages.create(
-        model=JUDGE_MODEL, max_tokens=700,
-        system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": content}],
-        output_config={"format": {"type": "json_schema", "schema": SCHEMA}})
-    return json.loads(next((b.text for b in resp.content if b.type == "text"), "{}"))
+               f"RESPONSE 1:\n{r1}\n\n---\n\nRESPONSE 2:\n{r2}\n\n"
+               f"Keep 'rationale' to ONE short sentence.")
+    for max_tok in (1200, 2000):                    # retry bigger if the JSON truncated
+        resp = _client().messages.create(
+            model=JUDGE_MODEL, max_tokens=max_tok,
+            system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": content}],
+            output_config={"format": {"type": "json_schema", "schema": SCHEMA}})
+        txt = next((b.text for b in resp.content if b.type == "text"), "{}")
+        try:
+            return json.loads(txt)
+        except json.JSONDecodeError:
+            if resp.stop_reason != "max_tokens":
+                break                                # malformed for another reason — stop
+    print("  [warn] judge JSON unparseable -> scoring this call as all-tie")
+    return {}                                        # compare() defaults every axis to tie
 
 
 def compare(problem: str, passages_block: str, left: str, right: str) -> dict:
@@ -119,13 +128,17 @@ def main() -> None:
     details = []
     for i, (l, r) in enumerate(zip(rows_l, rows_r)):
         assert l["problem"] == r["problem"]
-        psg = retrieve([l["problem"]], mode="counseling")
-        verdict = compare(l["problem"], context_from_passages(psg), l["reply"], r["reply"])
+        try:
+            psg = retrieve([l["problem"]], mode="counseling")
+            verdict = compare(l["problem"], context_from_passages(psg), l["reply"], r["reply"])
+        except Exception as e:                      # never let one probe kill the whole run
+            print(f"[{l['gate']:<12}] ERROR: {type(e).__name__}: {e} -> skipped")
+            continue
         for ax in tallies:
             tallies[ax][verdict[ax]] += 1
         details.append({"gate": l["gate"], "problem": l["problem"], **verdict})
         print(f"[{l['gate']:<12}] overall={verdict['overall']:<5} "
-              + " ".join(f"{ax[:4]}={verdict[ax]}" for ax in AXES))
+              + " ".join(f"{ax[:4]}={verdict[ax]}" for ax in AXES), flush=True)
 
     print("\n" + "=" * 78 + f"\n## PAIRWISE SUMMARY  (LEFT={a.left}  RIGHT={a.right})")
     hdr = f"{'axis':<16}{'LEFT wins':>12}{'RIGHT wins':>12}{'tie':>8}"
