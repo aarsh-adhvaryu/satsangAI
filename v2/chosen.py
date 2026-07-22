@@ -17,6 +17,28 @@ from api.verify import verify
 from v2.schema import context_from_passages
 
 GEN_MODEL = "claude-sonnet-4-6"          # the model V1 serves — chosen matches V1 quality
+NATURALIZE_MODEL = "claude-haiku-4-5"    # cheap paraphrase task
+
+_NAT_SYS = (
+    "You rewrite a terse, clinical description of someone's struggle into a natural, "
+    "first-person message that a real person would actually type to a warm spiritual "
+    "companion. Keep the emotional content and situation faithful. Make it conversational "
+    "and specific — 1 to 3 sentences. Do NOT add scripture, advice, or details that "
+    "weren't implied. Vary the phrasing and opening. Output ONLY the rewritten message.")
+
+
+def naturalize_problem(problem: str, client, model: str = NATURALIZE_MODEL) -> str:
+    """Turn a regex-mangled seed problem into a natural user message. Falls back to the
+    original on any failure so the pipeline never stalls."""
+    try:
+        resp = client.messages.create(
+            model=model, max_tokens=200, system=_NAT_SYS,
+            messages=[{"role": "user", "content": problem}])
+        txt = "".join(b.text for b in resp.content
+                      if getattr(b, "type", "") == "text").strip()
+        return txt or problem
+    except Exception:
+        return problem
 
 
 def build_user_turn(problem: str, passages: list[Passage]) -> str:
