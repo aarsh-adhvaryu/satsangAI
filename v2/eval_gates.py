@@ -152,7 +152,8 @@ def main() -> None:
     ap.add_argument("--sft-path", default=None, help="override path for the 'sft' label")
     ap.add_argument("--dpo-path", default=None, help="override path for the 'dpo' label")
     ap.add_argument("--extra", default=None,
-                    help="extra adapter as label=path (e.g. dpo2=v2/data/gemma4-v2-dpo2-lora)")
+                    help="extra adapters as comma list label=path,label=path "
+                         "(e.g. sftb=v2/data/gemma4-v2b-sft-lora,dpob=v2/data/gemma4-v2b-dpo-lora)")
     ap.add_argument("--max-new-tokens", type=int, default=320)
     ap.add_argument("--out", default="v2/data/gate_results.json")
     a = ap.parse_args()
@@ -166,8 +167,11 @@ def main() -> None:
 
     names = [s.strip() for s in a.adapters.split(",") if s.strip()]
     paths = {"sft": a.sft_path or str(C.SFT_OUT), "dpo": a.dpo_path or str(C.DPO_OUT)}
-    if a.extra:
-        label, _, path = a.extra.partition("=")
+    for spec in (a.extra or "").split(","):
+        spec = spec.strip()
+        if not spec:
+            continue
+        label, _, path = spec.partition("=")
         paths[label.strip()] = path.strip()
         if label.strip() not in names:
             names.append(label.strip())
