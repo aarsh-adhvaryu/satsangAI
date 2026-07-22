@@ -51,21 +51,30 @@ def _client():
     return anthropic.Anthropic()
 
 
-def stream_reply(message: str, plan: dict, passages: list[Passage],
-                 history: list[dict] | None = None, facts: list[str] | None = None):
-    """Yield response text chunks. plan is the understand() dict."""
+def _user_prompt(message: str, plan: dict, passages: list[Passage],
+                 history: list[dict] | None, facts: list[str] | None) -> str:
     mem = f"What you remember about this person: {'; '.join(facts)}\n\n" if facts else ""
     convo = ""
     if history:
         convo = ("Recent conversation so far:\n"
                  + "\n".join(f"{h['role']}: {h['text'][:400]}" for h in history) + "\n\n")
-    user = (f"{mem}{convo}The person wrote:\n\"{message}\"\n\n"
+    return (f"{mem}{convo}The person wrote:\n\"{message}\"\n\n"
             f"Their underlying problem: {plan.get('problem_summary','')}\n"
             f"Felt emotion: {plan.get('primary_emotion','')}\n"
             f"How to help: {plan.get('response_plan','')}\n\n"
             f"PASSAGES (cite only these, by tag):\n{_passages_block(passages)}\n\n"
             f"Respond to the person now as the saint-companion. If there is recent "
             f"conversation, continue it naturally — don't repeat yourself.")
+
+
+def stream_reply(message: str, plan: dict, passages: list[Passage],
+                 history: list[dict] | None = None, facts: list[str] | None = None):
+    """Yield response text chunks. plan is the understand() dict. Dispatches to the
+    configured backend — Claude (default) or the from-scratch V2 Gemma adapter."""
+    user = _user_prompt(message, plan, passages, history, facts)
+    if config.GEN_BACKEND == "gemma":
+        yield from _gemma_stream(user)
+        return
     with _client().messages.stream(
         model=config.GEN_MODEL, max_tokens=1024,
         system=[{"type": "text", "text": PERSONA, "cache_control": {"type": "ephemeral"}}],
@@ -73,3 +82,44 @@ def stream_reply(message: str, plan: dict, passages: list[Passage],
     ) as stream:
         for text in stream.text_stream:
             yield text
+
+
+@functools.lru_cache(maxsize=1)
+def _gemma():
+    """Lazy-load the base + the V2 SFT adapter once. GPU-only (~52 GB bf16). Reuses the
+    hardware-aware loader from v2/train_config (Hopper grouped_mm vs Blackwell eager)."""
+    from peft import PeftModel
+    from v2 import train_config as C
+    base, tok = C.load_base("bf16")
+    base.config.use_cache = True
+    if tok.pad_token_id is None:
+        tok.pad_token = tok.eos_token
+    model = PeftModel.from_pretrained(base, config.GEMMA_ADAPTER)
+    model.eval()
+    print(f"[gemma] serving adapter: {config.GEMMA_ADAPTER}")
+    return model, tok
+
+
+def _gemma_stream(user: str):
+    """Stream the saint reply from the V2 Gemma adapter. Same PERSONA + grounded user
+    turn the adapter was trained on (single user message, chat-templated)."""
+    import threading
+    import torch
+    from transformers import TextIteratorStreamer
+
+    model, tok = _gemma()
+    prompt = tok.apply_chat_template(
+        [{"role": "user", "content": PERSONA + "\n\n" + user}],
+        add_generation_prompt=True, tokenize=False)
+    ids = tok(prompt, return_tensors="pt").to(model.device)
+    streamer = TextIteratorStreamer(tok, skip_prompt=True, skip_special_tokens=True)
+    kw = dict(**ids, max_new_tokens=config.GEMMA_MAX_NEW_TOKENS, do_sample=False,
+              pad_token_id=tok.pad_token_id, streamer=streamer)
+
+    def _run():
+        with torch.no_grad():
+            model.generate(**kw)
+
+    threading.Thread(target=_run, daemon=True).start()
+    for text in streamer:
+        yield text

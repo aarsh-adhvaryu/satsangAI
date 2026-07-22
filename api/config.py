@@ -39,6 +39,14 @@ GEN_MODEL = os.environ.get("SATSANG_GEN_MODEL", "claude-sonnet-4-6")  # saint ge
 PLAN_MODEL = os.environ.get("SATSANG_PLAN_MODEL", "claude-sonnet-4-6")  # understand+plan JSON
 EMBED_DEVICE = os.environ.get("SATSANG_EMBED_DEVICE", "cpu")          # cpu fine for single queries
 
+# Generation backend: "claude" (Sonnet, default) or "gemma" (the from-scratch V2
+# adapter — Claude-free at serving; needs a GPU, loads ~52 GB bf16). understand/plan
+# always use Claude; only the saint's reply switches.
+GEN_BACKEND = os.environ.get("SATSANG_GEN_BACKEND", "claude")
+GEMMA_ADAPTER = os.environ.get(
+    "SATSANG_GEMMA_ADAPTER", str(ROOT / "v2" / "data" / "gemma4-v2-sft-lora"))
+GEMMA_MAX_NEW_TOKENS = int(os.environ.get("SATSANG_GEMMA_MAX_NEW_TOKENS", "512"))
+
 # Traditions
 HOME_TRADITION = "swaminarayan"                  # Akshar-Purushottam / BAPS
 SHARED = "shared_hindu"
