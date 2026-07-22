@@ -43,8 +43,13 @@ EMBED_DEVICE = os.environ.get("SATSANG_EMBED_DEVICE", "cpu")          # cpu fine
 # adapter — Claude-free at serving; needs a GPU, loads ~52 GB bf16). understand/plan
 # always use Claude; only the saint's reply switches.
 GEN_BACKEND = os.environ.get("SATSANG_GEN_BACKEND", "claude")
+# Default V2 adapter = the DPO2 (on-policy) run. Blinded Opus pairwise judge vs the
+# SFT adapter: overall 5-4-3 for DPO2, and loving_pushback (anti-sycophancy — the
+# whole point of DPO) 4-0 in its favour, never worse; small faithfulness cost (1-3)
+# that api/verify catches deterministically regardless. Set the env var to the
+# gemma4-v2-sft-lora dir to serve the SFT adapter instead.
 GEMMA_ADAPTER = os.environ.get(
-    "SATSANG_GEMMA_ADAPTER", str(ROOT / "v2" / "data" / "gemma4-v2-sft-lora"))
+    "SATSANG_GEMMA_ADAPTER", str(ROOT / "v2" / "data" / "gemma4-v2-dpo2-lora"))
 GEMMA_MAX_NEW_TOKENS = int(os.environ.get("SATSANG_GEMMA_MAX_NEW_TOKENS", "512"))
 
 # Traditions
