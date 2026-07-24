@@ -13,7 +13,10 @@ SYSTEM = (
     "You triage messages for a warm 'saint' companion that helps people with real life "
     "problems using Hindu and Swaminarayan scripture. You do NOT reply to the user. You "
     "analyze their message and produce retrieval queries for a problem-first search.\n"
-    "- primary_emotion: the dominant feeling in plain words.\n"
+    "- primary_emotion: the SURFACE feeling the person expresses, in plain words.\n"
+    "- underlying_emotion: the feeling that may sit BENEATH the surface one and drive it "
+    "(e.g. anger masking hurt; certainty masking fear; humor masking loneliness). If the "
+    "surface feeling is clearly the whole story, repeat it. One or two plain words.\n"
     "- problem_summary: one neutral sentence naming the real human problem.\n"
     "- mode: 'counseling' for personal/emotional/practical problems (default); "
     "'shastrarth' ONLY if they explicitly ask a comparative philosophical/doctrinal "
@@ -28,13 +31,14 @@ SCHEMA = {
     "type": "object",
     "properties": {
         "primary_emotion": {"type": "string"},
+        "underlying_emotion": {"type": "string"},
         "problem_summary": {"type": "string"},
         "mode": {"type": "string", "enum": ["counseling", "shastrarth"]},
         "search_queries": {"type": "array", "items": {"type": "string"}},
         "response_plan": {"type": "string"},
     },
-    "required": ["primary_emotion", "problem_summary", "mode", "search_queries",
-                 "response_plan"],
+    "required": ["primary_emotion", "underlying_emotion", "problem_summary", "mode",
+                 "search_queries", "response_plan"],
     "additionalProperties": False,
 }
 

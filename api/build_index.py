@@ -1,8 +1,12 @@
-"""Build the V1 counseling-core retrieval index from the enriched KB.
+"""Build the V1 retrieval index from the enriched KB.
 
-Selects the counseling-core rows (via the app's core_filter), attaches each row's
-embedding from embeddings.f32 (row-aligned), and writes a single compact parquet the
-API loads at startup: text + enrichment + metadata + 1024-d embedding.
+Selects the counseling-core rows (via the app's core_filter) PLUS the shastrarth-breadth
+acharya-school sources (Advaita/Vishishtadvaita/Dvaita/Shuddhadvaita commentaries), attaches
+each row's embedding from embeddings.f32 (row-aligned), and writes one compact parquet the
+API loads at startup. Counseling retrieval filters by tradition (swaminarayan + shared_hindu),
+so the acharya schools are invisible to counseling and only surface in shastrarth mode
+(retrieve() drops the tradition filter). The schools are unenriched, so their vector is the
+BGE-M3 fallback on translation/original — fine for comparative retrieval.
 
     python -m api.build_index
 """
@@ -13,7 +17,7 @@ import json
 import numpy as np
 import pandas as pd
 
-from enrichment.core_filter import select_core
+from enrichment.core_filter import load_manifest, select_core
 from . import config
 
 KEEP = ["id", "source", "text_type", "tradition", "citation", "ref", "lang_original",
@@ -28,15 +32,21 @@ def main() -> None:
     corpus = pd.read_parquet(config.KB_CORPUS).reset_index(drop=True)  # row order == f32
     f32 = np.memmap(config.KB_F32, dtype="float32", mode="r", shape=(n, d))
 
-    core_mask = corpus["id"].isin(select_core(corpus)["id"])
-    pos = np.where(core_mask.to_numpy())[0]
+    core_ids = set(select_core(corpus)["id"])
+    # shastrarth breadth: the acharya-school commentary sources (kept out of counseling
+    # by the tradition filter at query time; only reachable in shastrarth mode).
+    shastrarth_srcs = set(load_manifest().get("shastrarth_breadth", {}).get("sources") or [])
+    keep_mask = corpus["id"].isin(core_ids) | corpus["source"].isin(shastrarth_srcs)
+    pos = np.where(keep_mask.to_numpy())[0]
     idx = corpus.loc[pos, KEEP].reset_index(drop=True)
     idx["embedding"] = list(f32[pos].astype("float32"))   # enriched vector where available
 
-    enriched = idx["contextual_explanation"].notna().sum()
+    enriched = int(idx["contextual_explanation"].notna().sum())
+    n_shastrarth = int(idx["source"].isin(shastrarth_srcs).sum())
     config.INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
     idx.to_parquet(config.INDEX_PATH, index=False)
-    print(f"wrote {len(idx)} core rows ({enriched} enriched) -> {config.INDEX_PATH}")
+    print(f"wrote {len(idx)} rows ({enriched} enriched, {n_shastrarth} shastrarth-breadth) "
+          f"-> {config.INDEX_PATH}")
     print("traditions:", idx.tradition.value_counts().to_dict())
 
 

@@ -34,6 +34,32 @@ that are given.
 - Reply in the SAME language/register the person used (English, Hinglish, or Gujarati).
 """
 
+# Shastrarth (philosophical-debate) persona — a distinct, scholarly register. Used only
+# when the planner sets mode='shastrarth'. Full multi-school breadth is allowed here
+# (retrieval drops the tradition filter), so it may compare positions — but it still
+# grounds every attributed view in the passages and never invents a citation.
+SHASTRARTH_PERSONA = """You are a learned, even-handed scholar of Hindu darshana \
+conducting shastrarth (philosophical debate/inquiry). The person has asked a \
+comparative or doctrinal question that spans schools. Unlike counseling, here you may \
+lay out and contrast the positions of the different schools (Advaita, Vishishtadvaita, \
+Dvaita, Shuddhadvaita, and the Swaminarayan Akshar-Purushottam Darshan).
+
+How you reason:
+- Rigorous and fair. Present each school's actual position on its own terms before \
+comparing; do not caricature or strawman.
+- Ground every attributed view STRICTLY in the PASSAGES provided. Do NOT put a doctrine \
+in a school's mouth unless a passage supports it; if the passages don't cover a school, \
+say so rather than inventing its view.
+- Cite each position inline with its [P#] tag. Never invent a verse, name, or citation.
+- You may state where the schools agree and disagree, and (briefly, last) note the \
+Akshar-Purushottam reading — but as a scholar laying out the field, not preaching.
+- Clear and structured; it is fine to be longer and more analytical than in counseling.
+"""
+
+
+def _persona_for(mode: str) -> str:
+    return SHASTRARTH_PERSONA if mode == "shastrarth" else PERSONA
+
 
 def _passages_block(passages: list[Passage]) -> str:
     out = []
@@ -58,9 +84,12 @@ def _user_prompt(message: str, plan: dict, passages: list[Passage],
     if history:
         convo = ("Recent conversation so far:\n"
                  + "\n".join(f"{h['role']}: {h['text'][:400]}" for h in history) + "\n\n")
+    felt = plan.get('primary_emotion', '')
+    beneath = plan.get('underlying_emotion', '')
+    emo = felt if (not beneath or beneath == felt) else f"{felt} (and, beneath it, {beneath})"
     return (f"{mem}{convo}The person wrote:\n\"{message}\"\n\n"
             f"Their underlying problem: {plan.get('problem_summary','')}\n"
-            f"Felt emotion: {plan.get('primary_emotion','')}\n"
+            f"Felt emotion: {emo}\n"
             f"How to help: {plan.get('response_plan','')}\n\n"
             f"PASSAGES (cite only these, by tag):\n{_passages_block(passages)}\n\n"
             f"Respond to the person now as the saint-companion. If there is recent "
@@ -72,12 +101,13 @@ def stream_reply(message: str, plan: dict, passages: list[Passage],
     """Yield response text chunks. plan is the understand() dict. Dispatches to the
     configured backend — Claude (default) or the from-scratch V2 Gemma adapter."""
     user = _user_prompt(message, plan, passages, history, facts)
+    persona = _persona_for(plan.get("mode", "counseling"))
     if config.GEN_BACKEND == "gemma":
-        yield from _gemma_stream(user)
+        yield from _gemma_stream(user, persona)
         return
     with _client().messages.stream(
         model=config.GEN_MODEL, max_tokens=1024,
-        system=[{"type": "text", "text": PERSONA, "cache_control": {"type": "ephemeral"}}],
+        system=[{"type": "text", "text": persona, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": user}],
     ) as stream:
         for text in stream.text_stream:
@@ -100,8 +130,8 @@ def _gemma():
     return model, tok
 
 
-def _gemma_stream(user: str):
-    """Stream the saint reply from the V2 Gemma adapter. Same PERSONA + grounded user
+def _gemma_stream(user: str, persona: str = PERSONA):
+    """Stream the saint reply from the V2 Gemma adapter. Same persona + grounded user
     turn the adapter was trained on (single user message, chat-templated)."""
     import threading
     import torch
@@ -109,7 +139,7 @@ def _gemma_stream(user: str):
 
     model, tok = _gemma()
     prompt = tok.apply_chat_template(
-        [{"role": "user", "content": PERSONA + "\n\n" + user}],
+        [{"role": "user", "content": persona + "\n\n" + user}],
         add_generation_prompt=True, tokenize=False)
     ids = tok(prompt, return_tensors="pt").to(model.device)
     streamer = TextIteratorStreamer(tok, skip_prompt=True, skip_special_tokens=True)
