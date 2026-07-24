@@ -40,7 +40,6 @@ def main() -> None:
     from peft import PeftModel
 
     from v2 import reject, train_config as C
-    from v2.build_pairs import _done_ids
     from v2.schema import PreferencePair, read_jsonl
     from api.retrieve_types import Passage
 
@@ -48,9 +47,18 @@ def main() -> None:
     outp = Path(a.out)
     sft = a.sft or str(C.SFT_OUT)
 
+    def seed_key(p):
+        # per-pair identity for resume. NOT grounding_ids: 6-passage contexts SHARE
+        # passage ids across pairs, so a grounding-id set intersection over-skips
+        # (this shrank an earlier run from 4999 to 1546). seed_id is stable per pair.
+        return p.meta.get("seed_id") or (p.grounding_ids[0] if p.grounding_ids else p.problem[:80])
+
     pairs = read_jsonl(inp)
-    done = _done_ids(outp)
-    todo = [p for p in pairs if not (set(p.grounding_ids) & done)]
+    done = set()
+    if outp.exists():
+        for w in read_jsonl(outp):
+            done.add(seed_key(w))
+    todo = [p for p in pairs if seed_key(p) not in done]
     print(f"{len(pairs)} pairs | {len(done)} already done | {len(todo)} to generate")
     if not todo:
         print("nothing to do — on-policy pair set is complete.")
