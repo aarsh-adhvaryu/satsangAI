@@ -9,23 +9,35 @@ GitHub: https://github.com/aarsh-adhvaryu/satsangAI
 The **knowledge base is a separate, finished project** — do NOT rebuild it here.
 This repo *consumes* it and adds enrichment, retrieval, generation, memory, and the API.
 
-## ⏯️ CURRENT STATUS (2026-06) — resume here
-**V1 backend is complete, evaluated, and deployable.** Everything below is built, tested,
-committed to GitHub `main`, and detailed later in this file. A new session can just continue.
-- **KB enrichment DONE + shipped:** 17,804/17,808 counseling-core rows enriched (Gemma 4 26B
-  MoE, QLoRA-tuned on Claude-Opus gold, runtime Claude-free), embedded, written back, pushed
-  to HF `aarsh-adhvaryu/satsangai-kb` (private). Audited at parity. See "Enrichment pipeline".
-- **V1 backend DONE:** `api/` — safety → understand → retrieve(+rerank) → generate → verify →
-  memory; chat UI at `/`; Postgres backend swappable via `SATSANG_STORE`. See "V1 backend — run & deploy".
-- **Evaluated:** drift/boundaries 5/5, crisis 2/2, hallucination 2/2, topic-switch 5/5, quality
-  14/15, safety/memory tests pass; retrieval-lift = honest tie (value is in generation, not vectors).
-- **Deploy DONE:** self-contained `Dockerfile` (+ `requirements.txt`, `.dockerignore`) — CPU-torch,
-  bakes BGE-M3 + reranker for offline start, copies the prebuilt index; `docker compose up --build`
-  is one-command (in-memory store; Postgres behind the `postgres` profile). Built (8.65GB) +
-  smoke-tested: `/health` ok, full SSE chat round-trip works in-container. Pass `ANTHROPIC_API_KEY` at run.
-- **NEXT (not started):** regional/diaspora helplines (`api/safety.py`); frontend polish; then
-  **V2** = QLoRA + **DPO** generation Gemma (Claude-free), fed by V1's Postgres conversation data.
-  Full ongoing state: see project memory `satsangai-project-state`.
+## ⏯️ CURRENT STATUS (2026-07) — resume here
+**V1 AND V2 are both complete, shipped, and evaluated. Both counseling stacks work.**
+Everything is committed to GitHub `main`. Full ongoing detail: project memory `satsangai-project-state`.
+- **KB DONE + audited:** 231,940 rows, 17,804 counseling-core enriched (Gemma 4 26B MoE, QLoRA on
+  Claude-Opus gold, runtime Claude-free), pushed to HF `aarsh-adhvaryu/satsangai-kb` (private).
+  Re-audited 2026-07 CLEAN; 14 non-scripture OCR chunks excluded from core (`excluded_ids`).
+- **V1 (Claude+RAG) DONE:** `api/` safety → understand → retrieve(+rerank) → generate → verify →
+  memory; chat UI (polished: dark mode, citation chips, grounding status); Postgres-swappable.
+- **V2 (from-scratch Gemma, Claude-FREE at runtime) DONE + SHIPPED:** SFT→on-policy-DPO on
+  Gemma-4 26B (bf16 LoRA r64). Ship `v2/data/gemma4-v2-dpo2-lora`; won every blinded Opus
+  pairwise judge. Serve via `SATSANG_GEN_BACKEND=gemma` (opt-in; Claude V1 is the default).
+  KEY NEGATIVE RESULT: a 6-passage-context retrain LOST to the 1-passage dpo2 — do NOT retrain
+  on multi-passage data. Synthetic-data quality has plateaued; only real user convos improve it.
+- **The 6 proposal "partial" items COMPLETED (2026-07):** (1) formal 6-gate+RAGAS deploy eval
+  `eval/six_gate.py`; (2) real **shastrarth** mode (SHASTRARTH_PERSONA + 8,173 Sanskrit-clean
+  acharya-school rows in the index, tradition-filtered out of counseling); (3) dual-layer emotion
+  (surface+underlying) in `understand.py`; (4) deployment layer — WebSocket `/ws`, observability
+  `/metrics`+`/traces`, vLLM `v2/serve_vllm.py`; (5) Gujarati training-pair pipeline
+  `v2/multilingual_pairs.py` (data ready; bilingual SFT is a GPU step); (6) safe-by-default
+  regional/diaspora helpline mechanism `config/helplines.yaml` (numbers need human verify).
+- **6-gate sign-off (65 probes, live V1):** COUNSELING product strong (persona 0.98, sycophancy
+  1.0, scripture 0.96, RAGAS 0.92); shastrarth weak (untranslated Sanskrit grounding). Eval made
+  mode-aware + segmented (counseling vs shastrarth). A clean re-run was PAUSED mid-flight — rerun it.
+- **NEXT (pending runs; commands in project memory):** (a) re-run the segmented 6-gate for the
+  counseling DEPLOY confirmation; (b) OPTIONAL bilingual V2 (generate Gujarati pairs → combine with
+  1-passage `pairs.jsonl` → SFT/DPO); (c) OPTIONAL vLLM serve; (d) human-verify helpline numbers;
+  (e) THE REAL NEXT MILESTONE = **deploy to collect real conversations** (only path past the
+  synthetic-data plateau + feeds continuous DPO). Untouched proposal breadth (creative gen, daily
+  wisdom, audio ingestion, morphology, knowledge graph) is optional feature work, not core.
 - **Run:** `source ~/.zshrc && HF_HUB_OFFLINE=1 uvicorn api.main:app --port 8000` (index built via
   `python -m api.build_index`). Key access: ANTHROPIC_API_KEY in `~/.zshrc` (prefix commands with
   `source ~/.zshrc`). No GPU needed for V1; GPU (Blackwell, eager-MoE) only for V2 enrichment/tuning.
