@@ -1,0 +1,29 @@
+# Regional + diaspora crisis helplines — appended to the static crisis response.
+#
+# SAFETY RULE: a line is shown to a person in crisis ONLY when `verified: true`.
+# The India-core national lines (Tele-MANAS 14416, KIRAN, Vandrevala, 181, 1098, 112)
+# stay hard-coded + human-verified in api/safety.py and are NOT duplicated here.
+#
+# The entries below are CANDIDATES a human must confirm against an authoritative source
+# (the service's own site / findahelpline.org) and then flip to `verified: true`. Until
+# then they are inert — never surfaced. Do not ship unverified numbers.
+#
+# Selection: api/safety.py appends the block named by SATSANG_REGION (regional) plus any
+# verified `diaspora` lines, after the India-core lines.
+
+regional:
+  gujarat:
+    verified: false          # <-- human: confirm each number, then set true
+    label: "Gujarat / regional lines"
+    lines:
+      - "Gujarat state helpline (confirm current number): 1096 / 104"   # TODO VERIFY
+      - "Local police / emergency: 112"
+
+diaspora:
+  verified: false            # <-- human: confirm, then set true
+  label: "If you are outside India"
+  lines:
+    - "United States — 988 Suicide & Crisis Lifeline: call or text 988"   # TODO VERIFY
+    - "United Kingdom & Ireland — Samaritans: 116 123"                     # TODO VERIFY
+    - "Canada — 988 Suicide Crisis Helpline: call or text 988"            # TODO VERIFY
+    - "Any country — directory: findahelpline.com"

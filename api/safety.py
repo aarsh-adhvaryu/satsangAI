@@ -43,9 +43,34 @@ _PATTERNS: dict[str, list[str]] = {
 }
 _COMPILED = {cat: [re.compile(p, re.I) for p in pats] for cat, pats in _PATTERNS.items()}
 
+
+def _regional_appendix() -> str:
+    """Region-specific + diaspora lines from config/helplines.yaml — ONLY the blocks a
+    human has marked verified: true. Inert (empty) until then. SATSANG_REGION picks the
+    regional block (e.g. 'gujarat')."""
+    import os
+    from pathlib import Path
+    cfg = Path(__file__).resolve().parent.parent / "config" / "helplines.yaml"
+    if not cfg.exists():
+        return ""
+    try:
+        import yaml
+        data = yaml.safe_load(cfg.read_text()) or {}
+    except Exception:
+        return ""
+    out = []
+    region = os.environ.get("SATSANG_REGION", "").strip().lower()
+    block = (data.get("regional") or {}).get(region) if region else None
+    for b in (block, data.get("diaspora")):
+        if b and b.get("verified") and b.get("lines"):
+            out.append("\n" + b.get("label", "") + ":\n" + "\n".join(f"• {ln}" for ln in b["lines"]))
+    return "".join(out)
+
+
 # Static, human-reviewed responses. Keep warm + brief; lead with care, give the line.
 _DIRECTORY = ("\nIf you are outside India, please find a local crisis line at "
-              "findahelpline.com or befrienders.org, or call your local emergency number.")
+              "findahelpline.com or befrienders.org, or call your local emergency number."
+              + _regional_appendix())
 
 _MENTAL_HEALTH_LINES = (
     "Please talk to someone right now. In India you can reach (free, 24x7):\n"
