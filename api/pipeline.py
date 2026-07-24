@@ -14,6 +14,7 @@ from __future__ import annotations
 from . import config, safety
 from .generate import stream_reply
 from .memory import extract_facts
+from .observability import Trace
 from .retrieve import retrieve
 from .store import conversation_store, fact_store
 from .understand import understand
@@ -26,45 +27,54 @@ _memory = fact_store()
 def respond(message: str, conversation_id: str | None = None, user_id: str | None = None):
     history = _convos.history(conversation_id) if conversation_id else []
     facts = _memory.facts(user_id) if user_id else []
+    tr = Trace(backend=config.GEN_BACKEND)
 
     # 1. Safety gate — runs first, cannot be bypassed.
-    crisis = safety.classify(message)
+    with tr.span("safety"):
+        crisis = safety.classify(message)
     if crisis.is_crisis:
         if conversation_id:
             _convos.append(conversation_id, "user", message)
             _convos.append(conversation_id, "assistant", crisis.response)
+        tr.set(crisis=True, category=crisis.category)
         yield "crisis", {"category": crisis.category}
         yield "text", crisis.response
-        yield "done", {"crisis": True, "cited": [], "unverified_refs": []}
+        yield "done", {"crisis": True, "cited": [], "unverified_refs": [], "trace": tr.finish()}
         return  # never extract memory from a crisis turn
 
     # 2. Understand + plan (context-aware).
-    plan = understand(message, history=history)
+    with tr.span("understand"):
+        plan = understand(message, history=history)
+    tr.set(mode=plan.get("mode"))
     yield "plan", plan
 
     # 3. Retrieve (no LLM).
-    passages = retrieve(plan["search_queries"], mode=plan.get("mode", "counseling"),
-                        rerank_query=plan.get("problem_summary") or message)
+    with tr.span("retrieve"):
+        passages = retrieve(plan["search_queries"], mode=plan.get("mode", "counseling"),
+                            rerank_query=plan.get("problem_summary") or message)
     yield "passages", [{"tag": f"[P{i}]", "citation": p.citation, "source": p.source,
                         "tradition": p.tradition,
                         "score": round(p.rerank_score if p.rerank_score is not None else p.score, 3)}
                        for i, p in enumerate(passages, 1)]
 
     # 4. Generate (grounded, memory + history aware).
-    if config.FAITHFULNESS_GUARD:
-        from .faithfulness import guarded_generate
-        reply, faith = guarded_generate(message, plan, passages, history=history, facts=facts)
-        yield "text", reply                     # guarded mode is non-streaming
-    else:
-        full = []
-        for chunk in stream_reply(message, plan, passages, history=history, facts=facts):
-            full.append(chunk)
-            yield "text", chunk
-        reply = "".join(full)
-        faith = None
+    with tr.span("generate"):
+        if config.FAITHFULNESS_GUARD:
+            from .faithfulness import guarded_generate
+            reply, faith = guarded_generate(message, plan, passages, history=history, facts=facts)
+            yield "text", reply                     # guarded mode is non-streaming
+        else:
+            full = []
+            for chunk in stream_reply(message, plan, passages, history=history, facts=facts):
+                full.append(chunk)
+                yield "text", chunk
+            reply = "".join(full)
+            faith = None
 
     # 5. Verify citations (deterministic) + faithfulness report.
-    result = verify(reply, passages)
+    with tr.span("verify"):
+        result = verify(reply, passages)
+    result["trace"] = tr.finish()
     if faith is not None:
         result["faithfulness"] = faith
 
