@@ -34,9 +34,23 @@ def main() -> None:
 
     core_ids = set(select_core(corpus)["id"])
     # shastrarth breadth: the acharya-school commentary sources (kept out of counseling
-    # by the tradition filter at query time; only reachable in shastrarth mode).
+    # by the tradition filter; only reachable in shastrarth mode). These are UNenriched,
+    # UNtranslated raw Sanskrit OCR, so keep only rows with substantial Devanagari and no
+    # mojibake — drops OCR junk (page numbers, English/TOC fragments). Grounding is then
+    # genuine Sanskrit (the generator must read it; strong for Claude, weaker for Gemma).
+    import re as _re
+    _moji = _re.compile(r"[�]|Ã[\x80-\xbf]|â€|ï¿½")
     shastrarth_srcs = set(load_manifest().get("shastrarth_breadth", {}).get("sources") or [])
-    keep_mask = corpus["id"].isin(core_ids) | corpus["source"].isin(shastrarth_srcs)
+    is_school = corpus["source"].isin(shastrarth_srcs)
+
+    def _substantial(t: str) -> bool:
+        # keep real commentary (Sanskrit Devanagari OR English translation — both useful);
+        # drop only OCR junk: tiny page-number/TOC fragments and mojibake.
+        t = str(t)
+        return len(t.strip()) >= 120 and not _moji.search(t)
+
+    school_ok = is_school & corpus["original"].map(_substantial)
+    keep_mask = corpus["id"].isin(core_ids) | school_ok
     pos = np.where(keep_mask.to_numpy())[0]
     idx = corpus.loc[pos, KEEP].reset_index(drop=True)
     idx["embedding"] = list(f32[pos].astype("float32"))   # enriched vector where available
