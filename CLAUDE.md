@@ -29,15 +29,22 @@ Everything is committed to GitHub `main`. Full ongoing detail: project memory `s
   `/metrics`+`/traces`, vLLM `v2/serve_vllm.py`; (5) Gujarati training-pair pipeline
   `v2/multilingual_pairs.py` (data ready; bilingual SFT is a GPU step); (6) safe-by-default
   regional/diaspora helpline mechanism `config/helplines.yaml` (numbers need human verify).
-- **6-gate sign-off (65 probes, live V1):** COUNSELING product strong (persona 0.98, sycophancy
-  1.0, scripture 0.96, RAGAS 0.92); shastrarth weak (untranslated Sanskrit grounding). Eval made
-  mode-aware + segmented (counseling vs shastrarth). A clean re-run was PAUSED mid-flight — rerun it.
-- **NEXT (pending runs; commands in project memory):** (a) re-run the segmented 6-gate for the
-  counseling DEPLOY confirmation; (b) OPTIONAL bilingual V2 (generate Gujarati pairs → combine with
-  1-passage `pairs.jsonl` → SFT/DPO); (c) OPTIONAL vLLM serve; (d) human-verify helpline numbers;
-  (e) THE REAL NEXT MILESTONE = **deploy to collect real conversations** (only path past the
-  synthetic-data plateau + feeds continuous DPO). Untouched proposal breadth (creative gen, daily
-  wisdom, audio ingestion, morphology, knowledge graph) is optional feature work, not core.
+- **6-gate sign-off DONE (mode-aware, segmented, `eval/six_gate_v1b.json`):** COUNSELING product
+  is DEPLOY-GRADE — 5/6 gates pass (hallucination 1.0, persona 1.0, sycophancy 0.98, scripture 1.0,
+  RAGAS 0.91); only `emotional` 0.929 vs 0.95 = 3/42 borderline near-misses on hard probes (dosage/
+  newborn/anxiety), threshold-strictness not defects. SHASTRARTH weak (hallucination 0.78, scripture
+  0.83 — untranslated-Sanskrit limitation; persona now passes).
+- **⏳ IN PROGRESS — BILINGUAL V2 run started (this session, ~3.5h `&&` chain, resumable):**
+  `multilingual_pairs` (Gujarati) → cat with 1-passage `pairs.jsonl` → `pairs_bilingual.jsonl` →
+  `sft_train`(→`gemma4-v2-bi-sft-lora`) → `onpolicy_negatives` → `dpo_train`(→`gemma4-v2-bi-dpo-lora`)
+  → `eval_gates` + `judge_pairwise` (dpo2 vs **bi**). **NEW SESSION: read `v2/data/gate_results_bi.json`
+  + the pairwise output — if `bi` beats/ties dpo2 without English regression, promote it
+  (`SATSANG_GEMMA_ADAPTER=v2/data/gemma4-v2-bi-dpo-lora`); else keep dpo2. If the chain died, re-run
+  the same command (every stage is resumable).** Full command in project memory `satsangai-project-state`.
+- **NEXT after bilingual verdict:** (a) OPTIONAL vLLM serve (`v2/serve_vllm.py`); (b) human-verify
+  helpline numbers in `config/helplines.yaml`; (c) THE REAL MILESTONE = **deploy to collect real
+  conversations** (only path past the synthetic-data plateau + feeds continuous DPO). Untouched
+  proposal breadth (creative gen, daily wisdom, audio, morphology, knowledge graph) = optional, not core.
 - **Run:** `source ~/.zshrc && HF_HUB_OFFLINE=1 uvicorn api.main:app --port 8000` (index built via
   `python -m api.build_index`). Key access: ANTHROPIC_API_KEY in `~/.zshrc` (prefix commands with
   `source ~/.zshrc`). No GPU needed for V1; GPU (Blackwell, eager-MoE) only for V2 enrichment/tuning.
