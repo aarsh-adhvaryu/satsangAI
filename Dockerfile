@@ -48,6 +48,12 @@ SentenceTransformer('BAAI/bge-m3'); CrossEncoder('BAAI/bge-reranker-v2-m3')"; \
 COPY api ./api
 COPY config ./config
 COPY enrichment ./enrichment
+# v2/ IS on the request path when SATSANG_GEN_BACKEND=gemma: api/generate imports
+# v2.train_config for the hardware-aware loader (Hopper grouped_mm vs Blackwell eager).
+# Omitting it made the Gemma backend crash on import inside the container while working
+# fine outside it. .dockerignore keeps v2/data (adapters, pair files) out of the image —
+# mount those at runtime; they are gigabytes and change independently of the code.
+COPY v2 ./v2
 
 # Already-cached models -> run offline; only the Anthropic API is reached at runtime.
 ENV HF_HUB_OFFLINE=1

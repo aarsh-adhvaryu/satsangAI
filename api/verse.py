@@ -150,6 +150,44 @@ def verse_view(row: dict) -> dict:
     }
 
 
+_WBW_HEADING = re.compile(
+    r"(?im)^[\s>*_#-]*\**\s*word[\s-]*by[\s-]*word\b.*$|^[\s>*_#-]*\**\s*word\s+meanings\b.*$")
+_NEXT_HEADING = re.compile(r"(?im)^[\s>*_#-]*\**\s*(meaning|translation|original|"
+                           r"transliteration|explanation|what this means)\b")
+
+_NO_WBW_NOTE = ("*(A word-by-word breakdown isn't recorded for this verse in my sources, "
+                "so I won't invent one.)*")
+
+
+def claims_word_by_word(reply: str) -> bool:
+    return bool(_WBW_HEADING.search(reply))
+
+
+def strip_word_by_word(reply: str) -> str:
+    """Remove a word-by-word section and say plainly that we don't have one.
+
+    Deterministic rather than model-dependent, because the model is CONVINCINGLY right:
+    asked for Yoga Sutras 1.3 it produced 'draṣṭuḥ — of the Seer', which is a correct
+    gloss it recalled from training, not from the KB (that sutra has no stored
+    word_meanings). Correct-from-memory is exactly the case the zero-hallucination
+    guarantee exists to catch — nothing verified it, and the next one may be wrong.
+    """
+    out, skipping = [], False
+    for line in reply.splitlines():
+        if _WBW_HEADING.match(line):
+            if not skipping:
+                out.append(_NO_WBW_NOTE)
+            skipping = True
+            continue
+        if skipping:
+            if _NEXT_HEADING.match(line):
+                skipping = False
+                out.append(line)
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
 def render_block(view: dict) -> str:
     """Plain-text layered rendering handed to the generator as fixed context.
 

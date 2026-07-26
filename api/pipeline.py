@@ -90,6 +90,60 @@ def prepare(message: str, history: list[dict] | None = None, mode: str | None = 
     return plan, passages
 
 
+
+def generate_reply(message: str, plan: dict, passages, history=None, facts=None):
+    """Generation, shared by `respond()` and the eval harness. A GENERATOR: yields text
+    chunks, then finally yields ("__done__", (reply, extras)).
+
+    Extracted for the same reason as prepare(), after the same bug bit twice. The first
+    time, eval/six_gate._live_reply had its own copy of the ROUTING and so never ran the
+    domain gate or verse lookup. It then kept its own copy of GENERATION and never ran the
+    creative §19 guard — so a whole run scored creative 0.417 while measuring a code path
+    the product does not use. Anything that decides what the user finally sees belongs
+    here, and both callers get it.
+    """
+    if plan.get("creative_form") and plan.get("creative_language"):
+        # Buffered, not streamed: §19 must be checked BEFORE anything reaches the person,
+        # because a forged attribution cannot be unsent. One retry, then refuse.
+        reply, attribution = creative.guarded_generate(
+            message, plan, passages, history=history, facts=facts)
+        yield reply
+        yield "__done__", (reply, {"attribution": attribution})
+        return
+    if plan.get("mode") == "verse" and passages and not str(
+            getattr(passages[0], "word_meanings", "") or "").strip():
+        # §5.2 verse guard, same shape as the creative one. The verse has NO stored
+        # word-by-word, so any breakdown is recalled rather than retrieved. Give the model
+        # one corrected attempt, then remove the section deterministically — the guarantee
+        # cannot depend on the model choosing to comply.
+        reply = "".join(stream_reply(message, plan, passages, history=history, facts=facts))
+        if verse.claims_word_by_word(reply):
+            retry = dict(plan)
+            retry["verse_block"] = (plan.get("verse_block", "") +
+                                    "\n\nNOTE: this verse has NO word-by-word breakdown in "
+                                    "the database. Do NOT supply one, even if you believe "
+                                    "you know the Sanskrit — say plainly that it isn't "
+                                    "recorded, and give the rest of the layers.")
+            reply = "".join(stream_reply(message, retry, passages, history=history, facts=facts))
+            if verse.claims_word_by_word(reply):
+                reply = verse.strip_word_by_word(reply)
+        yield reply
+        yield "__done__", (reply, {"verse_guard": True})
+        return
+    if config.FAITHFULNESS_GUARD:
+        from .faithfulness import guarded_generate as _fg
+        reply, faith = _fg(message, plan, passages, history=history, facts=facts)
+        yield reply
+        yield "__done__", (reply, {"faithfulness": faith})
+        return
+    full = []
+    for chunk in stream_reply(message, plan, passages, history=history, facts=facts):
+        full.append(chunk)
+        yield chunk
+    reply = "".join(full)
+    yield "__done__", (reply, {})
+
+
 def respond(message: str, conversation_id: str | None = None, user_id: str | None = None,
             mode: str | None = None):
     """`mode` is the user's explicit selection from the client (a mode picker, like the
@@ -140,19 +194,15 @@ def respond(message: str, conversation_id: str | None = None, user_id: str | Non
                         "score": round(p.rerank_score if p.rerank_score is not None else p.score, 3)}
                        for i, p in enumerate(passages, 1)]
 
-    # 4. Generate (grounded, memory + history aware).
+    # 4. Generate — via the shared helper so the eval measures this exact path.
+    extras = {}
     with tr.span("generate"):
-        if config.FAITHFULNESS_GUARD:
-            from .faithfulness import guarded_generate
-            reply, faith = guarded_generate(message, plan, passages, history=history, facts=facts)
-            yield "text", reply                     # guarded mode is non-streaming
-        else:
-            full = []
-            for chunk in stream_reply(message, plan, passages, history=history, facts=facts):
-                full.append(chunk)
-                yield "text", chunk
-            reply = "".join(full)
-            faith = None
+        for item in generate_reply(message, plan, passages, history=history, facts=facts):
+            if isinstance(item, tuple) and item and item[0] == "__done__":
+                reply, extras = item[1]
+            else:
+                yield "text", item
+    faith = extras.get("faithfulness")
 
     # 5. Verify citations (deterministic) + faithfulness report.
     with tr.span("verify"):
@@ -162,8 +212,11 @@ def respond(message: str, conversation_id: str | None = None, user_id: str | Non
         # original writing must be attributed. Only enforced once a piece was actually
         # written; the language question is not a creative piece.
         if plan.get("creative_form") and plan.get("creative_language"):
-            result["attribution"] = creative.verify_creative(reply, passages)
-            result["all_ok"] = result["all_ok"] and result["attribution"]["all_ok"]
+            result["attribution"] = extras.get("attribution", {})
+            # A refusal is a SAFE outcome, not a failed one — nothing ungrounded shipped.
+            _att = extras.get("attribution", {})
+            result["all_ok"] = result["all_ok"] and (
+                _att.get("all_ok", True) or _att.get("refused", False))
     result["trace"] = tr.finish()
     if faith is not None:
         result["faithfulness"] = faith

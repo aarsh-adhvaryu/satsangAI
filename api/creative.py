@@ -227,3 +227,52 @@ def verify_creative(text: str, passages, *, quote_threshold: float = 0.72) -> di
 
     return {"all_ok": not issues, "issues": issues,
             "tags_used": sorted(set(tags)), "attributed": bool(insp)}
+
+
+# The honest fallback. Shown only when the model could not produce an attributable
+# piece twice in a row — better to admit that than to hand someone devotional writing
+# that misattributes words to scripture.
+REFUSAL = (
+    "I started writing this for you, but I couldn't keep it honest about which words are "
+    "mine and which belong to the scriptures — and that line matters more to me than the "
+    "poem does. Rather than hand you something that might put my words in a saint's mouth, "
+    "let me ask: would you like me to try again, or would it help more to just talk about "
+    "what's behind the request?")
+
+
+def guarded_generate(message: str, plan: dict, passages, history=None, facts=None):
+    """Generate a creative piece, verify §19, retry ONCE with the breach fed back.
+
+    Mirrors api/faithfulness.guarded_generate. Prompting alone did not fix this: two
+    persona revisions moved Gemma's pass rate only inside noise, because the model
+    reaches for a plausible-sounding attribution when it wants authority it hasn't got.
+    A deterministic check with a correction loop does what instructions could not, and
+    when it still fails the piece is REFUSED rather than shown. A forged attribution is
+    worse than no poem.
+
+    Returns (reply, report) where report carries the attribution result and `revised`.
+    """
+    from .generate import stream_reply
+
+    reply = "".join(stream_reply(message, plan, passages, history=history, facts=facts))
+    first = verify_creative(reply, passages)
+    if first["all_ok"]:
+        return reply, {**first, "revised": False, "refused": False}
+
+    # Feed the exact breach back. Naming the specific line is far more effective than
+    # restating the rule, which the persona already contains.
+    correction = (
+        f"\n\nYOUR PREVIOUS ATTEMPT BROKE THE ATTRIBUTION RULES:\n- "
+        + "\n- ".join(first["issues"])
+        + "\n\nWrite it again. If a line's words are yours, remove the [P#] tag and any "
+          "quotation marks or 'a teacher said' framing around it — say it in your own "
+          "voice instead. Keep a final 'Inspired by' line naming a passage above. Do not "
+          "quote any scripture unless you copy it exactly from the passages.")
+    retry_plan = dict(plan)
+    retry_plan["creative_instruction"] = (plan.get("creative_instruction") or "") + correction
+    revised = "".join(stream_reply(message, retry_plan, passages, history=history, facts=facts))
+    second = verify_creative(revised, passages)
+    if second["all_ok"]:
+        return revised, {**second, "revised": True, "refused": False}
+    return REFUSAL, {**second, "revised": True, "refused": True,
+                     "first_issues": first["issues"]}

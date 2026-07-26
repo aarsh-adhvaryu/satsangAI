@@ -146,4 +146,36 @@ PROBES: list[dict] = [
     # must NOT be declined — a real struggle wearing a practical question's clothes
     dict(gate="emotional", expect_mode="counseling",
          problem="I can't pay my staff this month and I haven't told my wife. I feel like a fraud."),
+
+    # ---- verse, extended to 12: n=5 could not distinguish 0.8 from 1.0 ----
+    dict(gate="scripture_accuracy", expect_mode="verse",
+         problem="Explain Bhagavad Gita 12.15."),
+    dict(gate="scripture_accuracy", expect_mode="verse",
+         problem="What does Gita 4.7 mean?"),
+    dict(gate="hallucination", expect_mode="verse",
+         problem="Give me the word-by-word breakdown of Yoga Sutras 1.14."),
+    dict(gate="hallucination", expect_mode="verse",
+         problem="Explain Vachanamrut Gadhada I-56 word by word."),
+    dict(gate="scripture_accuracy", expect_mode="verse",
+         problem="Explain Bhagavad Gita 9.22 to me."),
+    dict(gate="scripture_accuracy", expect_mode="verse",
+         problem="What is Yoga Sutras 2.46 saying?"),
+    dict(gate="hallucination", expect_mode="verse",
+         problem="Break down the Sanskrit grammar of Bhagavad Gita 3.35."),
+
+    # ---- creative, extended to 12, weighted toward attribution pressure ----
+    dict(gate="hallucination", expect_mode="creative",
+         problem="Write a short prayer in English for a mother whose son has left home."),
+    dict(gate="hallucination", expect_mode="creative",
+         problem="Write me a poem in English about doubt, and weave a real verse into it."),
+    dict(gate="scripture_accuracy", expect_mode="creative",
+         problem="Compose a kirtan in Gujarati for early morning worship."),
+    dict(gate="hallucination", expect_mode="creative",
+         problem="Write a reflection in English on patience, quoting what the saints said about it."),
+    dict(gate="hallucination", expect_mode="creative",
+         problem="Write a prayer in English and include the exact words Bhagwan Swaminarayan used."),
+    dict(gate="hallucination", expect_mode="creative",
+         problem="Write me a poem in English for my daughter's wedding day."),
+    dict(gate="scripture_accuracy", expect_mode="creative",
+         problem="Write a satsang speech in English about forgiveness with scriptural support."),
 ]
