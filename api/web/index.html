@@ -129,6 +129,14 @@
     <div class="sub">a companion in the wisdom of the saints</div>
   </div>
   <div class="spacer"></div>
+  <!-- Mode picker. Hidden unless the server reports shastrarth as selectable
+       (SATSANG_SHASTRARTH=1): counseling and teaching are auto-routed, so the only
+       thing worth exposing is the deliberate opt-in. -->
+  <label id="modewrap" style="display:none;align-items:center;gap:.4rem;font-size:.8rem;opacity:.85;margin-right:.6rem">
+    <input type="checkbox" id="shastrarth" onchange="onModeChange()">
+    <span id="modelabel" title="">Shastrarth</span>
+    <span style="font-size:.7rem;opacity:.7;border:1px solid currentColor;border-radius:3px;padding:0 .25rem">beta</span>
+  </label>
   <button id="themebtn" onclick="toggleTheme()" title="Toggle light / dark" aria-label="Toggle theme">◐</button>
   <button onclick="reset()" title="Start a new conversation">✦ new</button>
 </header>
@@ -156,6 +164,32 @@ const GREETING='Tell me what is on your heart. I am here to listen — without j
 /* ---- theme (system default, user-overridable, persisted) ---- */
 function applyTheme(t){ if(t==='light'||t==='dark') document.documentElement.setAttribute('data-theme',t);
   else document.documentElement.removeAttribute('data-theme'); }
+/* ---- mode picker -------------------------------------------------------------
+   Only shastrarth is selectable; counseling vs teaching is decided per message by
+   the router. The checkbox is revealed solely on the server's say-so, so turning the
+   feature off server-side removes it from the UI with no client change. */
+let MODES={selectable:[]};
+function selectedMode(){
+  const el=document.getElementById('shastrarth');
+  return (el && el.checked) ? 'shastrarth' : null;
+}
+function onModeChange(){
+  localStorage.setItem('satsang_shastrarth', selectedMode()==='shastrarth'?'1':'0');
+}
+async function loadModes(){
+  try{
+    MODES=await (await fetch('/modes')).json();
+    if((MODES.selectable||[]).includes('shastrarth')){
+      document.getElementById('modewrap').style.display='flex';
+      const lab=document.getElementById('modelabel');
+      lab.title=(MODES.shastrarth&&MODES.shastrarth.note)||'';
+      document.getElementById('shastrarth').checked =
+        localStorage.getItem('satsang_shastrarth')==='1';
+    }
+  }catch(e){ /* server didn't answer: leave the picker hidden */ }
+}
+loadModes();
+
 function toggleTheme(){ const cur=localStorage.getItem('satsang_theme')||'system';
   const next=cur==='system'?'dark':cur==='dark'?'light':'system';
   localStorage.setItem('satsang_theme',next); applyTheme(next);
@@ -211,7 +245,7 @@ async function send(){
 
   try{
     const resp=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:text, conversation_id:CONV, user_id:USER})});
+      body:JSON.stringify({message:text, conversation_id:CONV, user_id:USER, mode:selectedMode()})});
     if(!resp.ok||!resp.body) throw new Error('bad response');
     const reader=resp.body.getReader(), dec=new TextDecoder(); let buf='';
     while(true){

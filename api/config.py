@@ -40,9 +40,28 @@ PLAN_MODEL = os.environ.get("SATSANG_PLAN_MODEL", "claude-sonnet-4-6")  # unders
 EMBED_DEVICE = os.environ.get("SATSANG_EMBED_DEVICE", "cpu")          # cpu fine for single queries
 
 # Generation backend: "claude" (Sonnet, default) or "gemma" (the from-scratch V2
-# adapter — Claude-free at serving; needs a GPU, loads ~52 GB bf16). understand/plan
-# always use Claude; only the saint's reply switches.
+# adapter — needs a GPU, loads ~52 GB bf16). This switches the saint's REPLY only.
 GEN_BACKEND = os.environ.get("SATSANG_GEN_BACKEND", "claude")
+
+# Utility backend: understand+plan and memory fact-extraction. Setting BOTH this and
+# GEN_BACKEND to "gemma" is what makes the runtime genuinely Claude-free — with only
+# GEN_BACKEND switched, every turn still made two Anthropic calls and the system could
+# not start without a key. Proposal §10 specifies Gemma 4 E4B for this role: fast,
+# no fine-tuning needed, far cheaper than routing planning through the 26B.
+# Shastrarth is an OPT-IN mode, off by default and NEVER auto-routed.
+# It fails two of its six gates (hallucination 0.85, scripture 0.77) because the
+# acharya-school rows it retrieves are unenriched raw OCR. Rather than let the router
+# drop sincere learners into the weakest path, the user selects it deliberately — and
+# with this flag off it is not offered at all. Turn on with SATSANG_SHASTRARTH=1 once
+# the school rows are enriched and the gates pass.
+SHASTRARTH_ENABLED = os.environ.get("SATSANG_SHASTRARTH", "0") == "1"
+
+UTILITY_BACKEND = os.environ.get("SATSANG_UTILITY_BACKEND", "claude")
+# Empty = reuse the generation model already in VRAM with its adapter disabled (no extra
+# load, no download). §10 nominates Gemma 4 E4B for this role; set this once that model id
+# is confirmed and cached. The 26B base is what is actually on disk today.
+UTILITY_MODEL = os.environ.get("SATSANG_UTILITY_MODEL", "")
+UNDERSTAND_MODEL = PLAN_MODEL          # alias used by api/llm.py when routing to Claude
 # Default V2 adapter = the DPO2 (on-policy) run. Blinded Opus pairwise judge vs the
 # SFT adapter: overall 5-4-3 for DPO2, and loving_pushback (anti-sycophancy — the
 # whole point of DPO) 4-0 in its favour, never worse; small faithfulness cost (1-3)

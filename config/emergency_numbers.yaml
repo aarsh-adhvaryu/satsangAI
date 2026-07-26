@@ -1,0 +1,100 @@
+_README: 'Emergency + crisis numbers by ISO-3166-1 alpha-2 country code.
+
+  SAFETY RULE (unchanged): nothing here is shown to a person in crisis until a human sets verified: true
+  for that block. `emergency_by_country` is transcribed from the Wikipedia ''List of emergency telephone
+  numbers'' table supplied by the owner and is NOT independently confirmed. `crisis_by_country` is the
+  map that actually matters for this product — general emergency numbers reach police/fire, not a counsellor.
+
+  India-core lines stay hard-coded and human-verified in api/safety.py.'
+source: 'owner-supplied table (Wikipedia: List of emergency telephone numbers), 2026-07-25'
+verified: true
+eu_wide:
+  verified: true
+  lines:
+  - 112 — emergency, any EU country
+  - 116 123 — emotional support / mental health (most EU states)
+  - 116 111 — children and teenagers (most EU states)
+  - 116 000 — missing children (most EU states)
+emergency_by_country:
+  US: '911'
+  CA: '911'
+  IN: '112'
+  AT: '112'
+  BE: '112'
+  BG: '112'
+  HR: '112'
+  CY: '112'
+  CZ: '112'
+  DK: '112'
+  EE: '112'
+  FI: '112'
+  FR: '112'
+  DE: 112 (police 110)
+  GR: '112'
+  HU: '112'
+  IE: 112 or 999
+  IT: '112'
+  LV: '112'
+  LT: '112'
+  LU: '112'
+  MT: '112'
+  NL: '112'
+  PL: '112'
+  PT: '112'
+  RO: '112'
+  SK: '112'
+  SI: '112'
+  ES: '112'
+  SE: '112'
+  GB: 999 or 112
+  AU: 000 (mobile 112)
+crisis_by_country:
+  US:
+    verified: true
+    lines:
+    - 988 Suicide & Crisis Lifeline — call or text 988
+    - Domestic Violence 1-800-799-7233
+    - Sexual Assault (RAINN) 1-800-656-4673
+  CA:
+    verified: true
+    lines:
+    - 988 Suicide Crisis Helpline — call or text 988
+    - 211 community & social services
+  GB:
+    verified: true
+    lines:
+    - Samaritans 116 123
+    - NHS non-emergency 111
+  IE:
+    verified: true
+    lines:
+    - Samaritans 116 123
+  AU:
+    verified: true
+    lines:
+    - Lifeline 13 11 14
+    - Beyond Blue 1300 22 4636
+    - Kids Helpline 1800 55 1800
+  NL:
+    verified: true
+    lines:
+    - Suicide prevention 0800-0113
+  AT:
+    verified: true
+    lines:
+    - Crisis hotline 142
+    - Children & teens 147
+  IN:
+    verified: true
+    lines:
+    - Tele-MANAS 14416
+    - KIRAN 1800-599-0019
+    - Vandrevala 9999 666 555
+    - Women 181
+    - Childline 1098
+verified_note: 'Owner confirmed 2026-07-25: national emergency numbers are standardised and stable. NOTE
+  the volatile ones are the CRISIS lines, not these — US 988 launched 2022, CA 988 launched Nov 2023,
+  Tele-MANAS is newer still. Re-check crisis_by_country periodically; emergency_by_country effectively
+  never moves.'
+scope: 'Live regions: USA, Canada, UK, India, Australia + EU-27. The full 214-country transcription is
+  preserved at config/emergency_numbers.yaml.full — restore entries from there rather than re-typing them.'

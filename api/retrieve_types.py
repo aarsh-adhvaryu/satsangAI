@@ -17,6 +17,10 @@ class Passage:
     when_this_helps: str
     core_principle: str
     rerank_score: float | None = None  # cross-encoder score (set if reranked)
+    # Carried so consumers can tell "this verse HAS no word-by-word" from "we didn't load
+    # it" — the §5.2 gate needs that distinction to catch an invented gloss table, and
+    # only ~3.9% of the core has this field at all.
+    word_meanings: str = ""
 
     @classmethod
     def from_row(cls, row: dict, score: float) -> "Passage":
@@ -25,4 +29,5 @@ class Passage:
                    tradition=g("tradition"), score=score, original=g("original"),
                    translation=g("translation"),
                    contextual_explanation=g("contextual_explanation"),
-                   when_this_helps=g("when_this_helps"), core_principle=g("core_principle"))
+                   when_this_helps=g("when_this_helps"), core_principle=g("core_principle"),
+                   word_meanings=g("word_meanings"))

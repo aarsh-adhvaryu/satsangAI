@@ -10,8 +10,10 @@ fact, the gate drops it. File-backed JSON for V1 (Postgres in production).
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import re
+import time
 from pathlib import Path
 
 from . import config
@@ -102,6 +104,146 @@ class MemoryStore:
         _save(self.path, data)
         return {"stored": stored, "excluded": excluded}
 
+    # --- §7 "control is absolute": view / edit / delete / clear -----------------
+    # Facts are stored as bare strings, so identity is derived from the normalised
+    # text rather than a stored key. That keeps every existing memory.json readable
+    # with no migration, and an edit is simply delete-then-add.
+    @classmethod
+    def fact_id(cls, fact: str) -> str:
+        return hashlib.sha1(cls._norm(fact).encode()).hexdigest()[:12]
+
+    def items(self, user_id: str) -> list[dict]:
+        """Facts with stable ids, for a memory panel the user can act on."""
+        return [{"id": self.fact_id(f), "text": f} for f in self.facts(user_id)]
+
+    def update(self, user_id: str, fact_id: str, new_text: str) -> dict:
+        """Edit one fact. The sensitivity gate applies to user edits too — a person
+        must not be able to hand-write a self-harm disclosure into durable storage."""
+        new_text = new_text.strip()
+        if not new_text:
+            return {"ok": False, "error": "empty"}
+        sens, cats = is_sensitive(new_text)
+        if sens:
+            return {"ok": False, "error": "sensitive", "categories": cats}
+        data = _load(self.path, {})
+        facts = data.get(user_id, [])
+        for i, f in enumerate(facts):
+            if self.fact_id(f) == fact_id:
+                facts[i] = new_text
+                _save(self.path, data)
+                return {"ok": True, "id": self.fact_id(new_text), "text": new_text}
+        return {"ok": False, "error": "not_found"}
+
+    def delete(self, user_id: str, fact_id: str) -> dict:
+        data = _load(self.path, {})
+        facts = data.get(user_id, [])
+        kept = [f for f in facts if self.fact_id(f) != fact_id]
+        if len(kept) == len(facts):
+            return {"ok": False, "error": "not_found"}
+        data[user_id] = kept
+        _save(self.path, data)
+        return {"ok": True, "deleted": fact_id, "remaining": len(kept)}
+
+    def clear(self, user_id: str) -> dict:
+        data = _load(self.path, {})
+        n = len(data.get(user_id, []))
+        data[user_id] = []
+        _save(self.path, data)
+        return {"ok": True, "cleared": n}
+
+
+class PrefsStore:
+    """Per-user controls (§7) + interaction memory.
+
+    `paused` stops long-term fact extraction entirely without deleting what's stored;
+    `consent` gates whether this user's conversations may be retained for training
+    (proposal §29). Both default to OFF for consent and OFF for paused — i.e. memory
+    works, but nothing is training-eligible until the person opts in.
+    """
+    DEFAULTS = {"paused": False, "consent": False,
+                "language": None, "length": None, "style": None}
+
+    def __init__(self):
+        self.path = MEM_DIR / "prefs.json"
+
+    def get(self, user_id: str) -> dict:
+        return {**self.DEFAULTS, **_load(self.path, {}).get(user_id, {})}
+
+    def set(self, user_id: str, **changes) -> dict:
+        data = _load(self.path, {})
+        cur = {**self.DEFAULTS, **data.get(user_id, {})}
+        for k, v in changes.items():
+            if k in self.DEFAULTS and v is not None:
+                cur[k] = v
+        data[user_id] = cur
+        _save(self.path, data)
+        return cur
+
+
+class FeedbackStore:
+    """Turn-level ratings — the signal that turns served conversations into DPO pairs.
+
+    Without this a deployed conversation leaves no trace of whether the reply was any
+    good, so it cannot become a preference pair (proposal §8/§29). Stored append-only
+    with the reply text so a pair can be reconstructed later.
+    """
+    def __init__(self):
+        self.path = MEM_DIR / "feedback.jsonl"
+
+    def add(self, *, user_id: str | None, conversation_id: str | None, rating: str,
+            message: str = "", reply: str = "", note: str = "") -> dict:
+        if rating not in ("up", "down"):
+            return {"ok": False, "error": "rating must be 'up' or 'down'"}
+        row = {"ts": time.time(), "user_id": user_id, "conversation_id": conversation_id,
+               "rating": rating, "message": message, "reply": reply, "note": note}
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("a") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        return {"ok": True}
+
+    def all(self, user_id: str | None = None) -> list[dict]:
+        if not self.path.exists():
+            return []
+        out = []
+        for line in self.path.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if user_id is None or r.get("user_id") == user_id:
+                out.append(r)
+        return out
+
+
+def export_user(user_id: str, conversations=None, facts=None,
+                prefs=None, feedback=None) -> dict:
+    """Everything held about one person, in one JSON payload (§7 'export or clear').
+
+    Stores are passed in so this works against either backend (JSON or Postgres).
+    Conversation history is included because it is data about the user even though it
+    is short-term; sensitive disclosures were never written to `facts` by design.
+    """
+    facts = facts if facts is not None else MemoryStore()
+    prefs = prefs if prefs is not None else PrefsStore()
+    feedback = feedback if feedback is not None else FeedbackStore()
+    convos = {}
+    if conversations is not None:
+        raw = _load(getattr(conversations, "path", MEM_DIR / "conversations.json"), {})
+        convos = raw if isinstance(raw, dict) else {}
+    return {
+        "user_id": user_id,
+        "exported_at": time.time(),
+        "facts": facts.items(user_id) if hasattr(facts, "items") else facts.facts(user_id),
+        "preferences": prefs.get(user_id),
+        "feedback": feedback.all(user_id),
+        "conversations": convos,
+        "note": ("Sensitive disclosures (self-harm, abuse, trauma, medical, criminal) are "
+                 "never written to long-term memory — see is_sensitive()."),
+    }
+
 
 # --- LLM fact extraction (gated by is_sensitive on write) ----------------------
 EXTRACT_SYSTEM = (
@@ -114,21 +256,21 @@ EXTRACT_SYSTEM = (
 )
 
 
-@functools.lru_cache(maxsize=1)
-def _client():
-    import anthropic
-    return anthropic.Anthropic()
+_FACTS_SCHEMA = {"type": "object",
+                 "properties": {"facts": {"type": "array", "items": {"type": "string"}}},
+                 "required": ["facts"], "additionalProperties": False}
 
 
 def extract_facts(message: str, reply: str) -> list[str]:
+    """Propose durable facts. Routed through api/llm so it runs on Claude OR Gemma 4.
+
+    Whatever the backend proposes, `MemoryStore.add` re-checks every candidate against
+    the deterministic `is_sensitive` gate before anything is written — so swapping in a
+    smaller utility model cannot weaken the privacy guarantee.
+    """
+    from .llm import complete_json
     msg = f"User said:\n{message}\n\nAssistant replied:\n{reply}\n\nExtract durable safe facts."
-    resp = _client().messages.create(
-        model=MEMORY_MODEL, max_tokens=300,
-        system=[{"type": "text", "text": EXTRACT_SYSTEM, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": msg}],
-        output_config={"format": {"type": "json_schema", "schema": {
-            "type": "object", "properties": {"facts": {"type": "array",
-            "items": {"type": "string"}}}, "required": ["facts"],
-            "additionalProperties": False}}})
-    text = next((b.text for b in resp.content if b.type == "text"), '{"facts":[]}')
-    return json.loads(text).get("facts", [])
+    data = complete_json(EXTRACT_SYSTEM, msg, schema=_FACTS_SCHEMA, model=MEMORY_MODEL,
+                         max_tokens=300, fallback={"facts": []})
+    facts = data.get("facts") or []
+    return [f for f in facts if isinstance(f, str)]

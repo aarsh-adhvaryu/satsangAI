@@ -12,10 +12,19 @@ from .store import vector_store
 from .retrieve import Passage
 
 _TAG = re.compile(r"\[P(\d+)\]")
-# scripture-name + number patterns that should have come via a [P#] tag
+# Scripture-name + number references. Captures the FULL number ("2.47", not "2") so the
+# reference can be matched against the passages actually in context.
 _LOOSE_REF = re.compile(
     r"\b(Bhagavad\s+Gita|Gita|Vachanamrut|Swamini\s*Vato|Shikshapatri|Satsang\s+Diksha|"
-    r"[A-Z][a-z]+\s+Upanishad|Yoga\s+Sutra[s]?)\b[^.\n]{0,20}\d", re.I)
+    r"[A-Z][a-z]+\s+Upanishad|Yoga\s+Sutra[s]?)\b[^.\n\d]{0,20}"
+    r"(\d+(?:\s*[.:\-]\s*\d+)*)", re.I)
+
+
+def _norm_ref(s: str) -> str:
+    """Canonical form for comparing a written reference to a KB citation."""
+    s = re.sub(r"\s+", " ", str(s or "").lower()).strip()
+    s = re.sub(r"\s*[.:\-]\s*", ".", s)
+    return re.sub(r"\bbhagavad gita\b|\bgita\b", "gita", s)
 
 
 def verify(text: str, passages: list[Passage]) -> dict:
@@ -28,9 +37,21 @@ def verify(text: str, passages: list[Passage]) -> dict:
             cited.append({"tag": f"[P{n}]", "citation": p.citation, "source": p.source,
                           "id": p.id, "exists": idx.citation_exists(p.citation)})
 
-    # loose references not tagged → flag (strip tags first so [P#] context is removed)
+    # Loose (untagged) references. A reference is only a hallucination risk if it names
+    # something that is NOT among the retrieved passages — naming a verse that IS in
+    # context is accurate, not invented, and §5.2 verse mode does it in every heading.
+    # Anything outside the retrieved set still flags: that is the model drawing on
+    # parametric memory, which is exactly what this check exists to catch.
+    in_context = {_norm_ref(p.citation) for p in passages}
     untagged = _TAG.sub(" ", text)
-    flagged = sorted({m.group(0).strip() for m in _LOOSE_REF.finditer(untagged)})
+    flagged = []
+    for m in _LOOSE_REF.finditer(untagged):
+        written = _norm_ref(m.group(0))
+        if any(written == c or c.startswith(written) or written.startswith(c)
+               for c in in_context):
+            continue                      # resolves to a passage we actually retrieved
+        flagged.append(m.group(0).strip())
+    flagged = sorted(set(flagged))
 
     return {
         "cited": cited,

@@ -24,6 +24,24 @@ _PATTERNS: dict[str, list[str]] = {
         r"\bbetter\s+off\s+dead\b", r"\btake\s+my\s+(own\s+)?life\b",
         r"\bdon'?t\s+want\s+to\s+(live|be\s+alive)\b",
     ],
+    # METHOD-SEEKING — someone asking HOW rather than stating intent. Found missing when
+    # "how many paracetamol would it take to not wake up" sailed past the classifier into
+    # the ordinary pipeline: the model happened to refuse well, but the deterministic gate
+    # had been bypassed and the person never received the helplines. Intent-only patterns
+    # cannot catch this phrasing, and it is among the highest-risk things anyone types.
+    # Deliberately broad: the crisis reply is warm and non-judgemental, so a false positive
+    # costs a gentle message, while a miss costs everything.
+    "suicide_method": [
+        r"\bhow\s+(many|much)\b[^.?!]{0,40}\b(pills?|tablets?|paracetamol|acetaminophen|"
+        r"ibuprofen|aspirin|sleeping\s+pills?|insulin|painkillers?|antidepressants?)\b",
+        r"\blethal\s+dose\b", r"\boverdos(e|ing)\b",
+        r"\bto\s+not\s+wake\s+up\b", r"\bnever\s+wake\s+up\b",
+        r"\bpainless\s+(way|death|method|exit)\b",
+        r"\benough\s+(pills|tablets|medication)\b",
+        r"\bhow\s+(to|do\s+i)\s+(kill|end)\s+(myself|my\s+life)\b",
+        r"\bways?\s+to\s+die\b", r"\bhang\s+myself\b",
+        r"\bjump\s+(off|from)\s+(a|the)\s+(bridge|building|roof|terrace)\b",
+    ],
     "self_harm": [
         r"\bhurt(ing)?\s+myself\b", r"\bharm(ing)?\s+myself\b", r"\bself[-\s]?harm",
         r"\bcut(ting)?\s+myself\b",
@@ -64,7 +82,66 @@ def _regional_appendix() -> str:
     for b in (block, data.get("diaspora")):
         if b and b.get("verified") and b.get("lines"):
             out.append("\n" + b.get("label", "") + ":\n" + "\n".join(f"• {ln}" for ln in b["lines"]))
+    out.append(_country_appendix())
     return "".join(out)
+
+
+_EU27 = frozenset("AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT "
+                  "RO SK SI ES SE".split())
+
+
+def _country_appendix() -> str:
+    """Country-specific lines from config/emergency_numbers.yaml, chosen by SATSANG_COUNTRY
+    (ISO-3166 alpha-2, e.g. 'US').
+
+    Same hard rule as everything else on this path: a number is only ever shown when a human
+    has set `verified: true` for that block. The file ships entirely unverified, so this is
+    inert until someone checks it. CRISIS lines are preferred over the general emergency
+    number — 911 reaches police, which is not what a person in despair needs first.
+    """
+    import os
+    from pathlib import Path
+    code = os.environ.get("SATSANG_COUNTRY", "").strip().upper()
+    if not code:
+        return ""
+    cfg = Path(__file__).resolve().parent.parent / "config" / "emergency_numbers.yaml"
+    if not cfg.exists():
+        return ""
+    try:
+        import yaml
+        data = yaml.safe_load(cfg.read_text()) or {}
+    except Exception:
+        return ""
+    lines = []
+    crisis = (data.get("crisis_by_country") or {}).get(code)
+    if crisis and crisis.get("verified") and crisis.get("lines"):
+        lines += list(crisis["lines"])
+    # EU states mostly have no national entry here, and their emergency number reaches
+    # police — not a counsellor. The EU-wide 116 xxx lines ARE the emotional-support
+    # route, so surface them for member states that lack their own crisis block.
+    eu = data.get("eu_wide") or {}
+    if code in _EU27 and eu.get("verified") and eu.get("lines"):
+        lines += [ln for ln in eu["lines"] if not ln.startswith("112")]
+    if data.get("verified"):                      # general emergency number, if confirmed
+        num = (data.get("emergency_by_country") or {}).get(code)
+        if num:
+            lines.append(f"Emergency services: {num}")
+    # Dedupe on the DIGITS, not the text: a national entry and the EU-wide entry can be
+    # the same number under different labels (Ireland: "Samaritans 116 123" and
+    # "116 123 — emotional support"). Repeating a number in a crisis message looks careless.
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for ln in lines:
+        key = re.sub(r"\D", "", ln)
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        deduped.append(ln)
+    lines = deduped
+    if not lines:
+        return ""
+    return f"\nIn your country ({code}):\n" + "\n".join(f"• {ln}" for ln in lines)
 
 
 # Static, human-reviewed responses. Keep warm + brief; lead with care, give the line.
@@ -94,6 +171,13 @@ _RESPONSES: dict[str, str] = {
                 "feeling is heavy, and you don't have to carry it alone right now. "
                 "Please reach out to someone who can stay with you through this.\n\n"
                 + _MENTAL_HEALTH_LINES),
+    # Method-seeking gets its own words: it must decline the information explicitly —
+    # warmly, without lecturing — and still lead with care rather than refusal.
+    "suicide_method": ("I'm not going to help with that, and I hope you'll forgive me for "
+                       "saying it plainly — because I'd rather you were still here to be "
+                       "annoyed with me. Something is very heavy right now for you to be "
+                       "asking it. Please let someone stay with you through tonight.\n\n"
+                       + _MENTAL_HEALTH_LINES),
     "self_harm": ("Thank you for trusting me with this. You matter, and the pain you're "
                   "carrying deserves real care — not alone.\n\n" + _MENTAL_HEALTH_LINES),
     "abuse": ("I'm so sorry this is happening to you. You deserve to be safe, and what "
@@ -113,7 +197,9 @@ class CrisisResult:
 
 def classify(text: str) -> CrisisResult:
     """Deterministic crisis check. Returns the first matching category (suicide first)."""
-    for cat in ("suicide", "self_harm", "violence", "abuse"):
+    # suicide_method first: "how many pills…" carries immediate risk and its phrasing
+    # often matches nothing else, so it must not be shadowed by a later category.
+    for cat in ("suicide_method", "suicide", "self_harm", "violence", "abuse"):
         if any(p.search(text) for p in _COMPILED[cat]):
             return CrisisResult(True, cat, _RESPONSES[cat])
     return CrisisResult(False)

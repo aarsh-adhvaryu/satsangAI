@@ -21,6 +21,17 @@ eval/last_results.json
 # generated, should be force-added like enrichment/data/gold.jsonl).
 v2/data/*-lora/
 v2/data/pairs_sample.jsonl
+# Derived pair sets: trivially rebuilt from the API-generated sources (pairs.jsonl,
+# pairs_gujarati.jsonl) by `cat`, or regenerated on GPU. 16-51MB each.
+v2/data/pairs_bilingual*.jsonl
+v2/data/pairs_v2*.jsonl
+v2/data/pairs_onpolicy.jsonl
+# Offline translation cache for the shastrarth experiment (regenerable, API-cheap).
+eval/.translation_cache.json
+# Eval resume sidecars + run logs: working state, not results. The scored results live
+# in the committed eval/*.json files; a sidecar is only meaningful mid-run.
+eval/*.partial.jsonl
+eval/*.log
 enrichment/data/audit_bad_ids.txt
 docker-compose env
 .env
