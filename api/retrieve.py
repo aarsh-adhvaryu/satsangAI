@@ -58,22 +58,27 @@ def retrieve(queries: list[str], mode: str = "counseling", top_k: int = config.T
 
     # A separate, restricted recall. Reranked among themselves so the pinned verse is the
     # most apt one, not merely the highest cosine.
-    verses = _recall(idx, queries, allowed, allowed_text_types=prefer_text_types)
+    from .verse import is_colophon
+    verses = [p for p in _recall(idx, queries, allowed, allowed_text_types=prefer_text_types)
+              if not is_colophon(p.original, p.translation)]
     if not verses:
         return ranked                      # nothing scriptural on this topic: say so honestly
+    n_verse = max(1, top_k // 2)
     if config.RERANK:
         from .rerank import rerank
-        verses = rerank(rq, verses, max(1, top_k // 2))
-    else:
-        verses = verses[: max(1, top_k // 2)]
+        # Reranked to a WIDER window than we keep, so the translated-first pass below has
+        # something to promote. Rerank straight to n_verse and the preference is inert:
+        # it can only reorder three rows that are already chosen.
+        verses = rerank(rq, verses, top_k)
 
-    # Among this handful of near-equally apt verses, put a translated one first. Measured
-    # over the core: `verse` rows are 63.6% translated but `poetry` and `saying` are 0%,
-    # and reranking scores the ENGLISH contextual_explanation — so an untranslated
-    # Gujarati kirtan can outrank a Gita shloka on an English query and then render with
-    # its translation layer missing entirely. This reorders only inside the shortlist, so
-    # relevance is never traded away for a verse that does not fit.
+    # Put a translated verse first. Measured over the core: `verse` rows are 63.6%
+    # translated but `poetry` and `saying` are 0%, and reranking scores the ENGLISH
+    # contextual_explanation — so an untranslated Gujarati kirtan outranks a Gita shloka on
+    # an English query and then renders with its translation layer missing entirely. The
+    # sort is stable and the window is small, so relevance ordering survives within each
+    # group and nothing outside the top few can be promoted.
     verses.sort(key=lambda p: not str(p.translation or "").strip())
+    verses = verses[:n_verse]
 
     pinned_ids = {p.id for p in verses}
     return (verses + [p for p in ranked if p.id not in pinned_ids])[:top_k]

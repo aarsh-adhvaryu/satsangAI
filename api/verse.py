@@ -117,6 +117,27 @@ def parse_reference(message: str) -> str | None:
 # discusses focus at length while Gita 6.35 mentions it in eleven Sanskrit words.
 VERSE_TEXT_TYPES = ("verse", "poetry", "saying")
 
+# Chapter colophons ("oṃ tatsaditi ... thus ends the Nth chapter") are stored in the KB as
+# ordinary verses: 18 of them sit in the served index as text_type='verse', numbered one
+# past the end of their chapter (Bhagavad Gita 10.43, 11.56, 12.21 ...). They are enriched,
+# so they rank like real verses — but their translation is the literal string "Swami
+# Sivananda did not comment on this sloka". Offering one as "a shloka about devotion" is
+# indefensible, so they are excluded from verse SEARCH. An exact lookup of 10.43 still
+# resolves: there the stored explanation correctly says it is a closing marker.
+_COLOPHON_TEXT = re.compile(r"ॐ\s*तत्सदिति|इति\s+श्रीमद्भगवद्गीता|इति\s+श्रीमद्?भगवद्गीतासु")
+_NO_COMMENT = re.compile(r"did not comment on this", re.I)
+
+
+def is_colophon(original: str = "", translation: str = "") -> bool:
+    """True for a chapter-ending formula masquerading as a verse.
+
+    Matched against the OPENING of the text, not anywhere in it: a colophon row *is* the
+    formula, whereas a commentary page chunk may legitimately quote one mid-page (five
+    Vallabhacharya Anubhashya pages do exactly that, and must not be suppressed).
+    """
+    return bool(_COLOPHON_TEXT.search(str(original or "")[:80])
+                or _NO_COMMENT.search(str(translation or "")))
+
 _VERSE_NOUN = (r"(?:shlokas?|shloks?|slokas?|verses?|sutras?|couplets?|dohas?|"
                r"quotations?|quotes?)")
 # Asked FOR one ("give me a verse", "any shloka", "which sutra") ...
