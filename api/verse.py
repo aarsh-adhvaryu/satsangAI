@@ -107,6 +107,44 @@ def parse_reference(message: str) -> str | None:
     return None
 
 
+# --------------------------------------------------------------------------- #
+#  Unnamed verse requests                                                      #
+# --------------------------------------------------------------------------- #
+# The rows a person means by "a shloka": scripture lines, kirtan poetry, and the
+# aphoristic sayings (Swamini Vato). Everything else in the core — prose, commentary,
+# discourse — is ABOUT scripture rather than being it, and is what "give me a shlok on
+# focus" used to return: three pages of a saint's biography, because biography prose
+# discusses focus at length while Gita 6.35 mentions it in eleven Sanskrit words.
+VERSE_TEXT_TYPES = ("verse", "poetry", "saying")
+
+_VERSE_NOUN = (r"(?:shlokas?|shloks?|slokas?|verses?|sutras?|couplets?|dohas?|"
+               r"quotations?|quotes?)")
+# Asked FOR one ("give me a verse", "any shloka", "which sutra") ...
+_VERSE_ASK = re.compile(
+    rf"\b(?:give|share|tell|show|find|send|recite|read|need|want|looking\s+for|is\s+there|"
+    rf"any|some|a|an|one|which|what)\b[^.?!]{{0,40}}\b{_VERSE_NOUN}\b", re.I)
+# ... or named one and said what it should be about ("a verse about anger").
+_VERSE_TOPIC = re.compile(rf"\b{_VERSE_NOUN}\b\s*(?:about|on|for|regarding|related\s+to)\b",
+                          re.I)
+# "what does the Gita say about duty" — a scripture request without the word 'verse'.
+_SCRIPTURE_SAYS = re.compile(
+    r"\b(?:gita|geeta|vachanamrut|vachanamrit|upanishads?|yoga\s*sutras?|shikshapatri|"
+    r"satsang\s*diksha|swamini\s*vato|scriptures?|shastras?)\b[^.?!]{0,30}"
+    r"\b(?:says?|said|say|teach(?:es)?|tells?|mentions?|states?)\b", re.I)
+
+
+def wants_verse(message: str) -> bool:
+    """True when someone is asking for scripture ITSELF, not for counsel about a problem.
+
+    Deliberately separate from `parse_reference`: that one answers "which verse", this one
+    answers "a verse at all". A named reference is an exact lookup; an unnamed request is
+    still a search, but it must search the verse rows rather than the whole core.
+    """
+    msg = str(message or "")
+    return bool(_VERSE_ASK.search(msg) or _VERSE_TOPIC.search(msg)
+                or _SCRIPTURE_SAYS.search(msg))
+
+
 @functools.lru_cache(maxsize=1)
 def _citation_index() -> dict:
     """citation-prefix -> row dict, built once from the served index."""

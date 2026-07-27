@@ -58,6 +58,11 @@ def prepare(message: str, history: list[dict] | None = None, mode: str | None = 
         plan["mode"] = "verse"
         plan["verse_reference"] = ref
         plan["verse_block"] = verse.render_block(verse.verse_view(verse_row))
+    # No reference, but they still asked for scripture ("give me a shlok about focus").
+    # Which verse is a search, so it is resolved after retrieval — but the RETRIEVAL has
+    # to be told to look for verses, or the enriched prose wins on every emotional query.
+    prefer = verse.VERSE_TEXT_TYPES if (verse_row is None
+                                        and verse.wants_verse(message)) else None
 
     # §5.3/§5.4 creative request (form + output language).
     creative_form = creative.detect_form(message)
@@ -68,7 +73,19 @@ def prepare(message: str, history: list[dict] | None = None, mode: str | None = 
 
     with span("retrieve"):
         passages = retrieve(plan["search_queries"], mode=plan.get("mode", "counseling"),
-                            rerank_query=plan.get("problem_summary") or message)
+                            rerank_query=plan.get("problem_summary") or message,
+                            prefer_text_types=prefer)
+        if prefer and passages and not creative_form:
+            # A verse was asked for and one was found: give it the full §5.2 layered
+            # treatment. The Passage carries only what generation needs, so the layers
+            # come from the indexed row it was built from.
+            from .index import get_index
+            top = get_index().get(passages[0].id)
+            if top is not None and str(top.get("text_type") or "") in verse.VERSE_TEXT_TYPES:
+                plan["mode"] = "verse"
+                plan["verse_reference"] = str(top.get("citation") or "")
+                plan["verse_block"] = verse.render_block(verse.verse_view(top))
+                plan["verse_selected"] = True   # chosen by search, NOT named by them
         if verse_row is not None:
             # The requested verse must BE [P1]: otherwise the model narrates a verse the
             # verifier has no passage for and every claim about it reads as uncited.

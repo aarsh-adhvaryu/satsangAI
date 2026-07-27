@@ -247,7 +247,18 @@ def _user_prompt(message: str, plan: dict, passages: list[Passage],
     if creative_block:
         creative_block = creative_block + "\n\n"
     verse_block = plan.get("verse_block") or ""
-    if verse_block:
+    if verse_block and plan.get("verse_selected"):
+        # They asked for "a verse about X" without naming one, so THIS verse was CHOSEN by
+        # search — it is not necessarily from the text they had in mind. Saying "the verse
+        # you asked about" here is how a Gita shloka gets passed off as the Shikshapatri
+        # line someone actually requested. Name it, and own the substitution out loud.
+        verse_block = ("A VERSE FOUND BY SEARCH for what they asked about — they did NOT name "
+                       "this one. Introduce it by its citation as a verse that speaks to their "
+                       "theme, never as 'the verse you asked for'. If they named a scripture "
+                       "and this verse is from a different one, say so plainly before quoting "
+                       "it. Reproduce these layers EXACTLY as given, never alter the original, "
+                       f"transliteration or word-by-word glosses:\n{verse_block}\n\n")
+    elif verse_block:
         verse_block = ("THE VERSE THEY ASKED ABOUT — reproduce these layers EXACTLY as given, "
                        "never alter the original, transliteration or word-by-word glosses:\n"
                        f"{verse_block}\n\n")
