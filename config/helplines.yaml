@@ -19,11 +19,13 @@ regional:
       - "Gujarat state helpline (confirm current number): 1096 / 104"   # TODO VERIFY
       - "Local police / emergency: 112"
 
+# COUNTRY-SPECIFIC LINES LIVE IN config/emergency_numbers.yaml, NOT HERE.
+# They used to be duplicated in both files. Because dedup only runs inside
+# _country_appendix(), setting `verified: true` on a block here that repeated a number
+# already in emergency_numbers.yaml would print it twice to someone in crisis. One
+# number, one source. This block is now only for lines that are NOT country-routed.
 diaspora:
   verified: false            # <-- human: confirm, then set true
   label: "If you are outside India"
   lines:
-    - "United States — 988 Suicide & Crisis Lifeline: call or text 988"   # TODO VERIFY
-    - "United Kingdom & Ireland — Samaritans: 116 123"                     # TODO VERIFY
-    - "Canada — 988 Suicide Crisis Helpline: call or text 988"            # TODO VERIFY
     - "Any country — directory: findahelpline.com"

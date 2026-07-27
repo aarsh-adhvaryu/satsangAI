@@ -43,11 +43,6 @@ EMBED_DEVICE = os.environ.get("SATSANG_EMBED_DEVICE", "cpu")          # cpu fine
 # adapter — needs a GPU, loads ~52 GB bf16). This switches the saint's REPLY only.
 GEN_BACKEND = os.environ.get("SATSANG_GEN_BACKEND", "claude")
 
-# Utility backend: understand+plan and memory fact-extraction. Setting BOTH this and
-# GEN_BACKEND to "gemma" is what makes the runtime genuinely Claude-free — with only
-# GEN_BACKEND switched, every turn still made two Anthropic calls and the system could
-# not start without a key. Proposal §10 specifies Gemma 4 E4B for this role: fast,
-# no fine-tuning needed, far cheaper than routing planning through the 26B.
 # Shastrarth is an OPT-IN mode, off by default and NEVER auto-routed.
 # It fails two of its six gates (hallucination 0.85, scripture 0.77) because the
 # acharya-school rows it retrieves are unenriched raw OCR. Rather than let the router
@@ -56,6 +51,16 @@ GEN_BACKEND = os.environ.get("SATSANG_GEN_BACKEND", "claude")
 # the school rows are enriched and the gates pass.
 SHASTRARTH_ENABLED = os.environ.get("SATSANG_SHASTRARTH", "0") == "1"
 
+# Crisis-helpline routing. Declared here with every other knob so a deployer has ONE place
+# to look; api/safety.py reads the env directly at call time so tests can vary them.
+COUNTRY = os.environ.get("SATSANG_COUNTRY", "").strip().upper()   # ISO-3166 alpha-2
+REGION = os.environ.get("SATSANG_REGION", "").strip().lower()     # e.g. "gujarat"
+
+# Utility backend: understand+plan and memory fact-extraction. Setting BOTH this and
+# GEN_BACKEND to "gemma" is what makes the runtime genuinely Claude-free — with only
+# GEN_BACKEND switched, every turn still made two Anthropic calls and the system could
+# not start without a key. Proposal §10 specifies Gemma 4 E4B for this role: fast,
+# no fine-tuning needed, far cheaper than routing planning through the 26B.
 UTILITY_BACKEND = os.environ.get("SATSANG_UTILITY_BACKEND", "claude")
 # Empty = reuse the generation model already in VRAM with its adapter disabled (no extra
 # load, no download). §10 nominates Gemma 4 E4B for this role; set this once that model id

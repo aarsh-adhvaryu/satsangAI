@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 # Phrase patterns per category. Word-ish boundaries to limit obvious false hits;
 # still deliberately broad — safety over precision.
@@ -62,20 +63,62 @@ _PATTERNS: dict[str, list[str]] = {
 _COMPILED = {cat: [re.compile(p, re.I) for p in pats] for cat, pats in _PATTERNS.items()}
 
 
+_CONFIG_ERRORS: list[str] = []      # surfaced at startup by api/main.py
+
+
+def _load_helpline_config(cfg: Path) -> dict:
+    """Load a helpline YAML, COMPLAINING LOUDLY if it cannot be read.
+
+    This used to be `except Exception: return ""`. On any other path a silent fallback is
+    a reasonable default; here it means a person in crisis silently receives fewer numbers
+    than we believe we are giving them, with nothing logged and no test failing. A missing
+    or malformed config is an operational emergency, so it is printed, recorded for the
+    startup banner, and still degrades safely (the hard-coded India-core lines in this
+    module are never affected).
+    """
+    if not cfg.exists():
+        msg = f"helpline config MISSING: {cfg}"
+        if msg not in _CONFIG_ERRORS:
+            _CONFIG_ERRORS.append(msg)
+            print(f"!! {msg} — regional/country helplines will NOT be shown", flush=True)
+        return {}
+    try:
+        import yaml
+        return yaml.safe_load(cfg.read_text()) or {}
+    except Exception as e:                                       # noqa: BLE001
+        msg = f"helpline config UNREADABLE: {cfg} ({type(e).__name__}: {e})"
+        if msg not in _CONFIG_ERRORS:
+            _CONFIG_ERRORS.append(msg)
+            print(f"!! {msg} — regional/country helplines will NOT be shown", flush=True)
+        return {}
+
+
+def config_errors() -> list[str]:
+    """Problems found loading helpline configs. Empty is the healthy state."""
+    return list(_CONFIG_ERRORS)
+
+
+def validate_configs() -> list[str]:
+    """Load EVERY helpline config at startup, whatever the environment selects.
+
+    Checking only the files the current env happens to use hides breakage: with
+    SATSANG_COUNTRY unset, a corrupt emergency_numbers.yaml is never opened at boot and
+    fails silently at somebody's first crisis instead. Validate all of them, always.
+    """
+    _CONFIG_ERRORS.clear()
+    cfg_dir = Path(__file__).resolve().parent.parent / "config"
+    for name in ("helplines.yaml", "emergency_numbers.yaml"):
+        _load_helpline_config(cfg_dir / name)
+    return config_errors()
+
+
 def _regional_appendix() -> str:
     """Region-specific + diaspora lines from config/helplines.yaml — ONLY the blocks a
     human has marked verified: true. Inert (empty) until then. SATSANG_REGION picks the
     regional block (e.g. 'gujarat')."""
     import os
-    from pathlib import Path
     cfg = Path(__file__).resolve().parent.parent / "config" / "helplines.yaml"
-    if not cfg.exists():
-        return ""
-    try:
-        import yaml
-        data = yaml.safe_load(cfg.read_text()) or {}
-    except Exception:
-        return ""
+    data = _load_helpline_config(cfg)
     out = []
     region = os.environ.get("SATSANG_REGION", "").strip().lower()
     block = (data.get("regional") or {}).get(region) if region else None
@@ -100,18 +143,11 @@ def _country_appendix() -> str:
     number — 911 reaches police, which is not what a person in despair needs first.
     """
     import os
-    from pathlib import Path
     code = os.environ.get("SATSANG_COUNTRY", "").strip().upper()
     if not code:
         return ""
     cfg = Path(__file__).resolve().parent.parent / "config" / "emergency_numbers.yaml"
-    if not cfg.exists():
-        return ""
-    try:
-        import yaml
-        data = yaml.safe_load(cfg.read_text()) or {}
-    except Exception:
-        return ""
+    data = _load_helpline_config(cfg)
     lines = []
     crisis = (data.get("crisis_by_country") or {}).get(code)
     if crisis and crisis.get("verified") and crisis.get("lines"):

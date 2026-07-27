@@ -26,6 +26,12 @@ def index() -> FileResponse:
 
 @app.on_event("startup")
 def _warn_helplines() -> None:
+    # A helpline config that failed to load is an operational emergency, not a warning to
+    # scroll past: people in crisis would silently receive fewer numbers than intended.
+    from . import safety
+    for err in safety.validate_configs():   # ALL configs, not just the ones this env uses
+        print("\n" + "!" * 70 + f"\n!! {err}\n!! Regional/country helplines will NOT be shown. "
+              "The India-core lines still work.\n" + "!" * 70 + "\n", flush=True)
     if not config.CRISIS_HELPLINES_VERIFIED:
         print("\n" + "!" * 70 + "\n!! CRISIS HELPLINE NUMBERS IN api/safety.py ARE UNVERIFIED PLACEHOLDERS.\n"
               "!! A human must verify them and set SATSANG_HELPLINES_VERIFIED=1 before\n"
