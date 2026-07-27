@@ -37,29 +37,25 @@ they need an API judge. The last full judged run gave counseling 6/6 at k=3
 
 ## 🚨 KNOWN ISSUES — read before deploying
 
-1. **Silent failure on the crisis path.** `api/safety.py` wraps both YAML loads in
-   `except Exception: return ""`. A malformed `helplines.yaml` or `emergency_numbers.yaml`
-   silently drops every regional/country helpline with no warning anywhere. This is the one
-   path where being wrong is unrecoverable — it should log loudly, not fail quietly.
-2. **Two overlapping helpline configs.** `helplines.yaml` (diaspora block, `verified:false`)
-   duplicates numbers now live in `emergency_numbers.yaml` (US 988, UK Samaritans, CA 988).
-   Dedup happens only *within* `_country_appendix`, so flipping the diaspora block to
-   `verified:true` would print 988 twice. Consolidate onto one file.
-3. **Memory controls are unreachable.** 10 of 14 endpoints have no UI at all — `/memory`,
-   `/memory/{id}` (PATCH/DELETE), `/memory/prefs`, `/memory/export`, `/feedback`. §7 promises
-   "control is absolute" and §29 promises consent; both are currently unfulfilled promises
-   while the app stores real personal disclosures. **Biggest genuine blocker.**
-4. **Postgres breaks memory controls.** `PgMemoryStore` lacks `items/update/delete/clear`,
+**Fixed 2026-07-27** (audit issues 1, 2, 3, 5): the crisis path now fails loudly
+(`safety.validate_configs()` loads every helpline file at startup and prints a banner —
+it previously swallowed all exceptions and silently dropped regional lines); country
+numbers have exactly one source; `SATSANG_COUNTRY`/`REGION` are declared in `config.py`;
+and the memory panel, consent prompt and feedback controls now exist in the UI.
+
+Still open:
+
+1. **Postgres breaks memory controls.** `PgMemoryStore` lacks `items/update/delete/clear`,
    so those endpoints return 501 under `SATSANG_STORE=postgres`. Deploy with the memory
    store, or add parity (~1h). Matters for any host with ephemeral disk.
-5. **Config surface is split.** `SATSANG_COUNTRY` and `SATSANG_REGION` are read inline in
-   `safety.py`, not declared in `config.py` like every other knob.
-6. **Creative is safe but not good.** 1.000 is reached partly by refusing: ~42% of requests
+2. **Creative is safe but not good.** 1.000 is reached partly by refusing: ~42% of requests
    return an apology instead of a poem. Prompting is exhausted (three attempts, all inside
    noise) — lowering the refusal rate needs training data.
-7. **Verse trades helpfulness for verifiability.** For verses with no stored `word_meanings`
+3. **Verse trades helpfulness for verifiability.** For verses with no stored `word_meanings`
    the guard strips the breakdown, even though Gemma's glosses were *correct*. Real fix is
    backfilling `word_meanings` in the KB.
+4. **Helplines need a human spot-check** for the countries you actually expect users in.
+   India-core is human-verified; the other 31 came from an owner-supplied table.
 
 ---
 
@@ -216,9 +212,9 @@ Negative results worth not repeating:
 ## What's left, by priority
 
 **Before deploying**
-1. Frontend: memory panel, consent, feedback buttons (issue 3) — CPU only, no API.
-2. Fix the crisis-path silent failure (issue 1) and consolidate helpline configs (issue 2).
-3. Postgres parity for memory controls (issue 4) — or deploy with the memory store.
+1. ~~Frontend memory panel / consent / feedback~~ — DONE (5650a6f).
+2. ~~Crisis-path silent failure + helpline config overlap~~ — DONE (f040a62).
+3. Postgres parity for memory controls — or deploy with the memory store.
 4. Helpline spot-check for the countries you expect users in.
 5. Backend decision: Claude (per-conversation cost) vs Gemma (always-on GPU).
 
