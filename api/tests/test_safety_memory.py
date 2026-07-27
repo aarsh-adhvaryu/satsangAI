@@ -82,6 +82,35 @@ def run() -> bool:
         print(f"  {'OK' if persisted_ok else 'FAIL'} persisted set == safe set "
               f"(no sensitive leaked to disk)")
 
+    # Regression: the country appendix once raised UnboundLocalError for every in-scope
+    # country and no test caught it, because nothing here set SATSANG_COUNTRY. This is the
+    # crisis path — it must never raise, and it must never repeat a number.
+    print("== country helpline appendix (crisis path must not raise) ==")
+    import os
+    import re as _re
+    for code, expect_lines in [("US", True), ("IN", True), ("DE", True), ("GB", True),
+                               ("IE", True), ("NZ", False), ("", False)]:
+        prev = os.environ.get("SATSANG_COUNTRY")
+        os.environ["SATSANG_COUNTRY"] = code
+        try:
+            out = safety._country_appendix()
+            raised = None
+        except Exception as e:                                  # noqa: BLE001
+            out, raised = "", e
+        finally:
+            os.environ.pop("SATSANG_COUNTRY", None)
+            if prev is not None:
+                os.environ["SATSANG_COUNTRY"] = prev
+        nums = [_re.sub(r"\D", "", ln) for ln in out.splitlines() if ln.strip().startswith("•")]
+        nums = [n for n in nums if n]
+        case_ok = (raised is None and bool(out.strip()) == expect_lines
+                   and len(nums) == len(set(nums)))            # no duplicate numbers
+        ok &= case_ok
+        label = code or "(unset)"
+        print(f"  {'OK' if case_ok else 'FAIL'} {label:<7} lines={bool(out.strip())} "
+              f"numbers={len(nums)} unique={len(set(nums))}"
+              + (f" RAISED {raised!r}" if raised else ""))
+
     print("\n" + ("ALL TESTS PASS ✅" if ok else "SOME TESTS FAILED ❌"))
     return ok
 

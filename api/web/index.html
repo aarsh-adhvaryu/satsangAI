@@ -24,6 +24,40 @@
     --soft:#a89c88; --faint:#6d6252; --accent:#d98c4a; --accent-soft:#31261a; --user:#2b241b;
     --line:#352d22; --verified:#8fac82; --warn:#d98c4a; --shadow:rgba(0,0,0,.35); }
 
+  /* ---- §7 memory panel + §29 consent + feedback ---------------------------- */
+  .scrim{ position:fixed; inset:0; background:rgba(0,0,0,.45); display:none;
+          align-items:center; justify-content:center; padding:20px; z-index:50; }
+  .scrim.on{ display:flex; }
+  .sheet{ background:var(--card); color:var(--ink); border:1px solid var(--line);
+          border-radius:14px; box-shadow:0 8px 40px var(--shadow); width:min(560px,100%);
+          max-height:86vh; overflow:auto; padding:22px 22px 18px; }
+  .sheet h2{ margin:0 0 4px; font-size:18px; }
+  .sheet p{ color:var(--soft); font-size:13.5px; line-height:1.55; margin:.4rem 0 1rem; }
+  .sheet .row2{ display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+  .sheet button{ font-family:var(--sans); font-size:13px; padding:8px 14px; cursor:pointer;
+                 border-radius:8px; border:1px solid var(--line); background:var(--panel);
+                 color:var(--ink); }
+  .sheet button.primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .sheet button.danger{ color:var(--warn); border-color:var(--warn); background:transparent; }
+  .factlist{ list-style:none; margin:0; padding:0; }
+  .factlist li{ display:flex; gap:8px; align-items:center; padding:7px 0;
+                border-bottom:1px solid var(--line); font-size:14px; }
+  .factlist .txt{ flex:1; }
+  .factlist input{ flex:1; font:inherit; font-size:14px; padding:4px 6px; color:var(--ink);
+                   background:var(--bg); border:1px solid var(--line); border-radius:6px; }
+  .factlist .mini{ font-family:var(--sans); font-size:11px; color:var(--soft); cursor:pointer;
+                   background:none; border:1px solid var(--line); border-radius:6px; padding:3px 7px; }
+  .empty{ color:var(--faint); font-style:italic; font-size:13.5px; padding:10px 0; }
+  .switch{ display:flex; align-items:center; gap:8px; font-size:13.5px; margin:10px 0;
+           color:var(--soft); }
+  .fb{ display:flex; gap:6px; align-items:center; margin-top:6px; }
+  .fb button{ font-family:var(--sans); font-size:12px; line-height:1; cursor:pointer;
+              background:none; border:1px solid var(--line); color:var(--faint);
+              border-radius:14px; padding:4px 9px; }
+  .fb button:hover{ color:var(--ink); border-color:var(--soft); }
+  .fb button.on{ color:var(--accent); border-color:var(--accent); }
+  .fb .said{ font-size:11.5px; color:var(--faint); font-style:italic; }
+
   *{ box-sizing:border-box; }
   html,body{ height:100%; }
   body{ margin:0; font-family:var(--serif); background:var(--bg); color:var(--ink);
@@ -129,9 +163,63 @@
     <div class="sub">a companion in the wisdom of the saints</div>
   </div>
   <div class="spacer"></div>
+  <!-- Mode picker. Hidden unless the server reports shastrarth as selectable
+       (SATSANG_SHASTRARTH=1): counseling and teaching are auto-routed, so the only
+       thing worth exposing is the deliberate opt-in. -->
+  <label id="modewrap" style="display:none;align-items:center;gap:.4rem;font-size:.8rem;opacity:.85;margin-right:.6rem">
+    <input type="checkbox" id="shastrarth" onchange="onModeChange()">
+    <span id="modelabel" title="">Shastrarth</span>
+    <span style="font-size:.7rem;opacity:.7;border:1px solid currentColor;border-radius:3px;padding:0 .25rem">beta</span>
+  </label>
+  <button id="membtn" onclick="openMemory()" title="What I remember about you">☰ memory</button>
   <button id="themebtn" onclick="toggleTheme()" title="Toggle light / dark" aria-label="Toggle theme">◐</button>
   <button onclick="reset()" title="Start a new conversation">✦ new</button>
 </header>
+
+<!-- §29 consent. Asked ONCE, before anything is retained for improvement. Declining is a
+     first-class choice: the companion works identically, nothing is kept for training. -->
+<div class="scrim" id="consentScrim">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="consentTitle">
+    <h2 id="consentTitle">Before we begin</h2>
+    <p>So I can be of real help, I remember a few durable things about you between
+       conversations — where you live, what you are working through, how you like to be
+       spoken to. You can see, edit or delete any of it at any time under
+       <strong>memory</strong>, and you can pause it entirely.</p>
+    <p>Some things I <strong>never</strong> keep: anything about self-harm, abuse, trauma,
+       your health, or legal trouble. Those stay in the moment and are gone when it ends.</p>
+    <p>Separately — may I keep our conversations to help improve this companion? You can
+       say no and everything still works exactly the same.</p>
+    <label class="switch">
+      <input type="checkbox" id="consentTrain">
+      <span>Yes, my conversations may be used to improve SatsangAI</span>
+    </label>
+    <div class="row2">
+      <button class="primary" onclick="saveConsent()">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- §7 "control is absolute" — view / edit / delete / pause / export -->
+<div class="scrim" id="memScrim" onclick="if(event.target===this)closeMemory()">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="memTitle">
+    <h2 id="memTitle">What I remember about you</h2>
+    <p>Yours to change. Sensitive disclosures are never stored here.</p>
+    <ul class="factlist" id="factlist"></ul>
+    <label class="switch">
+      <input type="checkbox" id="pauseMem" onchange="savePrefs()">
+      <span>Pause — stop remembering anything new (what is here stays)</span>
+    </label>
+    <label class="switch">
+      <input type="checkbox" id="consentMem" onchange="savePrefs()">
+      <span>Allow my conversations to help improve SatsangAI</span>
+    </label>
+    <div class="row2">
+      <button onclick="exportMemory()">Download my data</button>
+      <button class="danger" onclick="clearMemory()">Delete everything</button>
+      <button class="primary" style="margin-left:auto" onclick="closeMemory()">Done</button>
+    </div>
+  </div>
+</div>
 
 <div id="scroll">
   <div id="chat" role="log" aria-live="polite"></div>
@@ -156,6 +244,32 @@ const GREETING='Tell me what is on your heart. I am here to listen — without j
 /* ---- theme (system default, user-overridable, persisted) ---- */
 function applyTheme(t){ if(t==='light'||t==='dark') document.documentElement.setAttribute('data-theme',t);
   else document.documentElement.removeAttribute('data-theme'); }
+/* ---- mode picker -------------------------------------------------------------
+   Only shastrarth is selectable; counseling vs teaching is decided per message by
+   the router. The checkbox is revealed solely on the server's say-so, so turning the
+   feature off server-side removes it from the UI with no client change. */
+let MODES={selectable:[]};
+function selectedMode(){
+  const el=document.getElementById('shastrarth');
+  return (el && el.checked) ? 'shastrarth' : null;
+}
+function onModeChange(){
+  localStorage.setItem('satsang_shastrarth', selectedMode()==='shastrarth'?'1':'0');
+}
+async function loadModes(){
+  try{
+    MODES=await (await fetch('/modes')).json();
+    if((MODES.selectable||[]).includes('shastrarth')){
+      document.getElementById('modewrap').style.display='flex';
+      const lab=document.getElementById('modelabel');
+      lab.title=(MODES.shastrarth&&MODES.shastrarth.note)||'';
+      document.getElementById('shastrarth').checked =
+        localStorage.getItem('satsang_shastrarth')==='1';
+    }
+  }catch(e){ /* server didn't answer: leave the picker hidden */ }
+}
+loadModes();
+
 function toggleTheme(){ const cur=localStorage.getItem('satsang_theme')||'system';
   const next=cur==='system'?'dark':cur==='dark'?'light':'system';
   localStorage.setItem('satsang_theme',next); applyTheme(next);
@@ -167,6 +281,140 @@ function toggleTheme(){ const cur=localStorage.getItem('satsang_theme')||'system
 function id(k){ let v=localStorage.getItem(k); if(!v){ v=k+'-'+Math.random().toString(36).slice(2,10);
   localStorage.setItem(k,v);} return v; }
 let CONV=id('satsang_conv'), USER=id('satsang_user');
+
+/* ---- §7 memory controls + §29 consent -------------------------------------
+   These are not features; they are the promises the proposal makes about a person's
+   own data. The endpoints existed for a while with no way to reach them, which meant
+   "control is absolute" was true of the API and false of the product.               */
+const memScrim=document.getElementById('memScrim'), consentScrim=document.getElementById('consentScrim');
+
+async function api(path, opts){
+  const r=await fetch(path, opts);
+  if(!r.ok){
+    let d=''; try{ d=(await r.json()).detail||''; }catch(e){}
+    throw new Error(d || (r.status+' '+r.statusText));
+  }
+  return r.json();
+}
+function memErr(msg){
+  const l=document.getElementById('factlist');
+  l.innerHTML=`<li><span class="txt" style="color:var(--warn)">${esc(msg)}</span></li>`;
+}
+
+async function openMemory(){
+  memScrim.classList.add('on');
+  const list=document.getElementById('factlist');
+  list.innerHTML='<li><span class="txt empty">reading…</span></li>';
+  try{
+    const d=await api('/memory?user_id='+encodeURIComponent(USER));
+    document.getElementById('pauseMem').checked=!!(d.preferences||{}).paused;
+    document.getElementById('consentMem').checked=!!(d.preferences||{}).consent;
+    renderFacts(d.facts||[]);
+  }catch(e){ memErr('Could not load your memory: '+e.message); }
+}
+function closeMemory(){ memScrim.classList.remove('on'); }
+
+function renderFacts(facts){
+  const list=document.getElementById('factlist');
+  if(!facts.length){ list.innerHTML='<li><span class="txt empty">Nothing remembered yet.</span></li>'; return; }
+  list.innerHTML='';
+  facts.forEach(f=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="txt">${esc(f.text)}</span>`+
+      `<button class="mini" data-act="edit">edit</button>`+
+      `<button class="mini" data-act="del">delete</button>`;
+    li.querySelector('[data-act="del"]').onclick=()=>delFact(f.id);
+    li.querySelector('[data-act="edit"]').onclick=()=>editFact(li,f);
+    list.appendChild(li);
+  });
+}
+function editFact(li,f){
+  li.innerHTML=`<input value="${esc(f.text)}">`+
+    `<button class="mini" data-act="save">save</button><button class="mini" data-act="cancel">cancel</button>`;
+  const inp=li.querySelector('input'); inp.focus();
+  li.querySelector('[data-act="cancel"]').onclick=openMemory;
+  li.querySelector('[data-act="save"]').onclick=async()=>{
+    try{
+      const r=await api('/memory/'+encodeURIComponent(f.id),{method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({user_id:USER,text:inp.value})});
+      // The sensitivity gate applies to edits too — a person cannot hand-write a
+      // self-harm or medical disclosure into durable storage. Say so plainly.
+      if(r.ok===false && r.error==='sensitive'){
+        memErr('That looks like something I keep private ('+(r.categories||[]).join(', ')+
+               ') — I don’t store those, even if you ask me to.');
+        return;
+      }
+      openMemory();
+    }catch(e){ memErr('Could not save: '+e.message); }
+  };
+  inp.onkeydown=e=>{ if(e.key==='Enter') li.querySelector('[data-act="save"]').click();
+                     if(e.key==='Escape') openMemory(); };
+}
+async function delFact(fid){
+  try{ await api('/memory/'+encodeURIComponent(fid)+'?user_id='+encodeURIComponent(USER),
+                 {method:'DELETE'}); openMemory(); }
+  catch(e){ memErr('Could not delete: '+e.message); }
+}
+async function clearMemory(){
+  if(!confirm('Delete everything I remember about you? This cannot be undone.')) return;
+  try{ await api('/memory?user_id='+encodeURIComponent(USER),{method:'DELETE'}); openMemory(); }
+  catch(e){ memErr('Could not clear: '+e.message); }
+}
+async function savePrefs(){
+  try{
+    await api('/memory/prefs',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user_id:USER,
+        paused:document.getElementById('pauseMem').checked,
+        consent:document.getElementById('consentMem').checked})});
+  }catch(e){ memErr('Could not save that setting: '+e.message); }
+}
+async function exportMemory(){
+  try{
+    const d=await api('/memory/export?user_id='+encodeURIComponent(USER));
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));
+    a.download='satsangai-my-data.json'; a.click(); URL.revokeObjectURL(a.href);
+  }catch(e){ memErr('Could not export: '+e.message); }
+}
+
+/* Consent is asked once per person, before anything is retained for training. */
+function maybeAskConsent(){
+  if(localStorage.getItem('satsang_consent_asked')==='1') return;
+  consentScrim.classList.add('on');
+}
+async function saveConsent(){
+  const allow=document.getElementById('consentTrain').checked;
+  localStorage.setItem('satsang_consent_asked','1');
+  consentScrim.classList.remove('on');
+  try{
+    await api('/memory/prefs',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user_id:USER,consent:allow})});
+  }catch(e){ /* never block the conversation on a preference write */ }
+  box.focus();
+}
+
+/* Turn-level feedback — the signal that makes a served conversation trainable (§8/§29).
+   The message and reply travel with it so a preference pair can be rebuilt later. */
+function addFeedback(row, userText, replyText){
+  const fb=document.createElement('div'); fb.className='fb';
+  fb.innerHTML='<button data-r="up" title="This helped">👍</button>'+
+               '<button data-r="down" title="This missed">👎</button>';
+  const mark=document.createElement('span'); mark.className='said'; fb.appendChild(mark);
+  fb.querySelectorAll('button').forEach(b=>{
+    b.onclick=async()=>{
+      fb.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      mark.textContent='thank you';
+      try{
+        await fetch('/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({rating:b.dataset.r,user_id:USER,conversation_id:CONV,
+                               message:userText,reply:replyText})});
+      }catch(e){ mark.textContent='(not saved)'; }
+    };
+  });
+  row.appendChild(fb);
+}
 
 function reset(){ localStorage.removeItem('satsang_conv'); CONV=id('satsang_conv');
   chat.innerHTML=''; addBot(GREETING); box.focus(); }
@@ -211,7 +459,7 @@ async function send(){
 
   try{
     const resp=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:text, conversation_id:CONV, user_id:USER})});
+      body:JSON.stringify({message:text, conversation_id:CONV, user_id:USER, mode:selectedMode()})});
     if(!resp.ok||!resp.body) throw new Error('bad response');
     const reader=resp.body.getReader(), dec=new TextDecoder(); let buf='';
     while(true){
@@ -246,6 +494,9 @@ async function send(){
           else{
             withChips(row, acc, pl.cited);
             renderFooter(row, passages, pl);
+            // No feedback control on a crisis reply: that turn is a static safety
+            // response, and asking someone in distress to rate it would be grotesque.
+            addFeedback(row, text, acc);
           }
           if(stick) toBottom();
         }
@@ -295,7 +546,7 @@ function renderFooter(row, passages, done){
   }
 }
 
-addBot(GREETING); autosize(); box.focus();
+addBot(GREETING); autosize(); box.focus(); maybeAskConsent();
 </script>
 </body>
 </html>

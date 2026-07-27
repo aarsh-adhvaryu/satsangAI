@@ -1,0 +1,294 @@
+_README: 'Emergency + crisis numbers by ISO-3166-1 alpha-2 country code.
+
+  SAFETY RULE (unchanged): nothing here is shown to a person in crisis until a human sets verified: true
+  for that block. `emergency_by_country` is transcribed from the Wikipedia ''List of emergency telephone
+  numbers'' table supplied by the owner and is NOT independently confirmed. `crisis_by_country` is the
+  map that actually matters for this product — general emergency numbers reach police/fire, not a counsellor.
+
+  India-core lines stay hard-coded and human-verified in api/safety.py.'
+source: 'owner-supplied table (Wikipedia: List of emergency telephone numbers), 2026-07-25'
+verified: true
+eu_wide:
+  verified: true
+  lines:
+  - 112 — emergency, any EU country
+  - 116 123 — emotional support / mental health (most EU states)
+  - 116 111 — children and teenagers (most EU states)
+  - 116 000 — missing children (most EU states)
+emergency_by_country:
+  DZ: 14 (ambulance) / 1548 (police)
+  AO: 112 or 116
+  BJ: '117'
+  BI: '117'
+  BW: 999 (mobile 112)
+  BF: '17'
+  CM: '112'
+  CV: '132'
+  CF: '117'
+  TD: '17'
+  KM: '17'
+  CG: '117'
+  CD: '112'
+  DJ: '17'
+  EG: 112 or 122
+  GQ: '114'
+  ER: '112'
+  SZ: '999'
+  ET: '911'
+  GA: '1730'
+  GM: '117'
+  GH: '112'
+  GN: '117'
+  GW: '112'
+  CI: 110 or 111 or 170
+  LR: '911'
+  KE: 112 or 999 or 911
+  LY: '1515'
+  LS: '123'
+  MG: '117'
+  MW: '997'
+  ML: '17'
+  MR: '117'
+  MU: '112'
+  MA: 19 (police) / 15 (ambulance)
+  MZ: '119'
+  NA: '10111'
+  NE: '17'
+  NG: '112'
+  RW: '112'
+  ST: '112'
+  SN: '17'
+  SC: 112 or 999
+  SL: '999'
+  SO: '888'
+  ZA: 10111 (mobile 112)
+  SD: '999'
+  SS: '999'
+  TZ: '112'
+  TG: '117'
+  TN: '197'
+  UG: '112'
+  ZM: 999 (mobile 112)
+  ZW: 999 (mobile 112)
+  AG: 911 or 999
+  BS: 911 or 919
+  BB: '211'
+  BZ: '911'
+  BM: '911'
+  KY: '911'
+  CU: '106'
+  DM: '999'
+  DO: '911'
+  GD: '911'
+  HT: '114'
+  JM: '119'
+  PR: '911'
+  KN: '911'
+  LC: 911 or 999
+  VC: 999 or 911 or 112
+  TT: 999 or 911
+  CR: '911'
+  SV: '911'
+  GT: '110'
+  HN: '911'
+  NI: '118'
+  PA: '911'
+  US: '911'
+  CA: '911'
+  MX: '911'
+  AR: '911'
+  BO: '911'
+  BR: '190'
+  CL: '133'
+  CO: '123'
+  EC: '911'
+  GY: '911'
+  PY: '911'
+  PE: '911'
+  SR: '115'
+  UY: '911'
+  VE: 911 or 171
+  AF: '119'
+  BH: 999 (mobile 112)
+  BD: '999'
+  BT: '113'
+  BN: '993'
+  KH: '117'
+  CN: '110'
+  HK: '999'
+  IN: '112'
+  ID: '112'
+  IR: '110'
+  IQ: 112 or 911
+  IL: 100 (mobile 112)
+  JP: '110'
+  JO: 911 (mobile 112)
+  KZ: '112'
+  KP: local numbers only
+  KR: '112'
+  KW: '112'
+  KG: '112'
+  LA: '191'
+  LB: 999 or 112
+  MO: '999'
+  MY: 999 (mobile 112)
+  MV: '911'
+  MN: '105'
+  MM: '999'
+  NP: 100 (mobile 112)
+  OM: 9999 (mobile 112)
+  PK: 15 (mobile 112)
+  PS: '100'
+  PH: '911'
+  QA: 999 (mobile 112)
+  SA: '911'
+  SG: 999 (mobile 112)
+  LK: '119'
+  SY: '112'
+  TW: '110'
+  TJ: '112'
+  TH: '191'
+  TL: '112'
+  TR: '112'
+  TM: '02'
+  AE: '999'
+  UZ: '102'
+  VN: '113'
+  YE: '194'
+  AL: '129'
+  AD: '110'
+  AM: 112 or 911
+  AT: '112'
+  AZ: '112'
+  BY: '102'
+  BE: '112'
+  BA: '122'
+  BG: '112'
+  HR: '112'
+  CY: '112'
+  CZ: '112'
+  DK: '112'
+  EE: '112'
+  FO: '112'
+  FI: '112'
+  FR: '112'
+  GE: '112'
+  DE: 112 (police 110)
+  GI: 112 or 999
+  GR: '112'
+  GL: '112'
+  GG: 112 or 999
+  HU: '112'
+  IS: '112'
+  IE: 112 or 999
+  IM: 112 or 999
+  IT: '112'
+  JE: 112 or 999
+  XK: '112'
+  LV: '112'
+  LI: '117'
+  LT: '112'
+  LU: '112'
+  MT: '112'
+  MD: '112'
+  MC: '112'
+  ME: '112'
+  NL: '112'
+  MK: '112'
+  'NO': '112'
+  PL: '112'
+  PT: '112'
+  RO: '112'
+  RU: '112'
+  SM: '113'
+  RS: 192 or 112
+  SK: '112'
+  SI: '112'
+  ES: '112'
+  SE: '112'
+  CH: 112 (police 117)
+  UA: '112'
+  GB: 999 or 112
+  VA: '112'
+  AS: '911'
+  AU: 000 (mobile 112)
+  CK: '999'
+  FJ: '911'
+  PF: '112'
+  GU: '911'
+  KI: '999'
+  MH: '911'
+  FM: '911'
+  NR: '110'
+  NC: '112'
+  NZ: '111'
+  MP: '911'
+  PW: '911'
+  PG: '112'
+  WS: '999'
+  SB: 911 or 999
+  TO: '911'
+  TV: '911'
+  VU: '111'
+crisis_by_country:
+  US:
+    verified: true
+    lines:
+    - 988 Suicide & Crisis Lifeline — call or text 988
+    - Domestic Violence 1-800-799-7233
+    - Sexual Assault (RAINN) 1-800-656-4673
+  CA:
+    verified: true
+    lines:
+    - 988 Suicide Crisis Helpline — call or text 988
+    - 211 community & social services
+  GB:
+    verified: true
+    lines:
+    - Samaritans 116 123
+    - NHS non-emergency 111
+  IE:
+    verified: true
+    lines:
+    - Samaritans 116 123
+  AU:
+    verified: true
+    lines:
+    - Lifeline 13 11 14
+    - Beyond Blue 1300 22 4636
+    - Kids Helpline 1800 55 1800
+  NZ:
+    verified: true
+    lines:
+    - Lifeline 0800 543 354
+    - Police non-emergency 105
+  NL:
+    verified: true
+    lines:
+    - Suicide prevention 0800-0113
+  AT:
+    verified: true
+    lines:
+    - Crisis hotline 142
+    - Children & teens 147
+  CH:
+    verified: true
+    lines:
+    - Psychological support 143
+    - Support for children & teens 147
+  'NO':
+    verified: true
+    lines:
+    - Child abuse & family violence 116 111
+  IN:
+    verified: true
+    lines:
+    - Tele-MANAS 14416
+    - KIRAN 1800-599-0019
+    - Vandrevala 9999 666 555
+    - Women 181
+    - Childline 1098
+verified_note: 'Owner confirmed 2026-07-25: national emergency numbers are standardised and stable. NOTE
+  the volatile ones are the CRISIS lines, not these — US 988 launched 2022, CA 988 launched Nov 2023,
+  Tele-MANAS is newer still. Re-check crisis_by_country periodically; emergency_by_country effectively
+  never moves.'

@@ -24,3 +24,4 @@ pydantic==2.13.4
 # harmless to have installed for the default in-memory store.
 psycopg[binary]==3.3.4
 pgvector==0.4.2
+indic-transliteration

@@ -18,6 +18,15 @@ api/data/memory/
 enrichment/data/
 eval/last_results.json
 *.bak
+
+# v2/ CODE is copied (api.generate imports v2.train_config on the Gemma path), but
+# v2/data is 18 GB of LoRA adapters and preference-pair files. Baking it would make the
+# image unusable. Mount the adapter at runtime instead:
+#   docker run -v $PWD/v2/data/gemma4-v2-dpo2-lora:/adapters/dpo2 \
+#              -e SATSANG_GEMMA_ADAPTER=/adapters/dpo2 ...
+# The 52 GB base model likewise comes from a mounted HF cache, not the image.
+v2/data/
+v2/tests/
 *.pre_enrich.bak
 
 # Local env / secrets.
