@@ -280,7 +280,11 @@ function toggleTheme(){ const cur=localStorage.getItem('satsang_theme')||'system
 /* ---- stable ids for multi-turn + long-term memory ---- */
 function id(k){ let v=localStorage.getItem(k); if(!v){ v=k+'-'+Math.random().toString(36).slice(2,10);
   localStorage.setItem(k,v);} return v; }
-let CONV=id('satsang_conv'), USER=id('satsang_user');
+let CONV=id('satsang_conv');
+/* USER is gone on purpose. Identity is an HttpOnly cookie the server issues and signs;
+   the page cannot read it and cannot forge one. Before this, user_id was a Math.random()
+   string sent by the client, so anyone who knew another person's id could read, edit or
+   export their memory. Same-origin fetches carry the cookie automatically. */
 
 /* ---- §7 memory controls + §29 consent -------------------------------------
    These are not features; they are the promises the proposal makes about a person's
@@ -306,7 +310,7 @@ async function openMemory(){
   const list=document.getElementById('factlist');
   list.innerHTML='<li><span class="txt empty">reading…</span></li>';
   try{
-    const d=await api('/memory?user_id='+encodeURIComponent(USER));
+    const d=await api('/memory');
     document.getElementById('pauseMem').checked=!!(d.preferences||{}).paused;
     document.getElementById('consentMem').checked=!!(d.preferences||{}).consent;
     renderFacts(d.facts||[]);
@@ -337,7 +341,7 @@ function editFact(li,f){
     try{
       const r=await api('/memory/'+encodeURIComponent(f.id),{method:'PATCH',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({user_id:USER,text:inp.value})});
+        body:JSON.stringify({text:inp.value})});
       // The sensitivity gate applies to edits too — a person cannot hand-write a
       // self-harm or medical disclosure into durable storage. Say so plainly.
       if(r.ok===false && r.error==='sensitive'){
@@ -352,26 +356,25 @@ function editFact(li,f){
                      if(e.key==='Escape') openMemory(); };
 }
 async function delFact(fid){
-  try{ await api('/memory/'+encodeURIComponent(fid)+'?user_id='+encodeURIComponent(USER),
-                 {method:'DELETE'}); openMemory(); }
+  try{ await api('/memory/'+encodeURIComponent(fid),{method:'DELETE'}); openMemory(); }
   catch(e){ memErr('Could not delete: '+e.message); }
 }
 async function clearMemory(){
   if(!confirm('Delete everything I remember about you? This cannot be undone.')) return;
-  try{ await api('/memory?user_id='+encodeURIComponent(USER),{method:'DELETE'}); openMemory(); }
+  try{ await api('/memory',{method:'DELETE'}); openMemory(); }
   catch(e){ memErr('Could not clear: '+e.message); }
 }
 async function savePrefs(){
   try{
     await api('/memory/prefs',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({user_id:USER,
+      body:JSON.stringify({
         paused:document.getElementById('pauseMem').checked,
         consent:document.getElementById('consentMem').checked})});
   }catch(e){ memErr('Could not save that setting: '+e.message); }
 }
 async function exportMemory(){
   try{
-    const d=await api('/memory/export?user_id='+encodeURIComponent(USER));
+    const d=await api('/memory/export');
     const a=document.createElement('a');
     a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));
     a.download='satsangai-my-data.json'; a.click(); URL.revokeObjectURL(a.href);
@@ -389,7 +392,7 @@ async function saveConsent(){
   consentScrim.classList.remove('on');
   try{
     await api('/memory/prefs',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({user_id:USER,consent:allow})});
+      body:JSON.stringify({consent:allow})});
   }catch(e){ /* never block the conversation on a preference write */ }
   box.focus();
 }
@@ -408,7 +411,7 @@ function addFeedback(row, userText, replyText){
       mark.textContent='thank you';
       try{
         await fetch('/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({rating:b.dataset.r,user_id:USER,conversation_id:CONV,
+          body:JSON.stringify({rating:b.dataset.r,conversation_id:CONV,
                                message:userText,reply:replyText})});
       }catch(e){ mark.textContent='(not saved)'; }
     };
@@ -459,7 +462,7 @@ async function send(){
 
   try{
     const resp=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:text, conversation_id:CONV, user_id:USER, mode:selectedMode()})});
+      body:JSON.stringify({message:text, conversation_id:CONV, mode:selectedMode()})});
     if(!resp.ok||!resp.body) throw new Error('bad response');
     const reader=resp.body.getReader(), dec=new TextDecoder(); let buf='';
     while(true){

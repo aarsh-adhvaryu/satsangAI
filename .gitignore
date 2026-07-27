@@ -35,3 +35,6 @@ eval/*.log
 enrichment/data/audit_bad_ids.txt
 docker-compose env
 .env
+
+# Session signing key — must never be committed; a leaked key forges any cookie.
+api/data/.session_secret
