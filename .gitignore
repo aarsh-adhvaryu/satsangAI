@@ -21,6 +21,12 @@ eval/last_results.json
 # generated, should be force-added like enrichment/data/gold.jsonl).
 v2/data/*-lora/
 v2/data/pairs_sample.jsonl
+# Merged bf16 model (~49 GB): regenerable in ~10 min via `serve_vllm merge`. Its small
+# JSON files were slipping past the *-lora/ rule and getting committed.
+v2/data/gemma4-v2-merged/
+v2/data/*-4bit/
+# Server run log — working state, not an artifact.
+server.log
 # Derived pair sets: trivially rebuilt from the API-generated sources (pairs.jsonl,
 # pairs_gujarati.jsonl) by `cat`, or regenerated on GPU. 16-51MB each.
 v2/data/pairs_bilingual*.jsonl
