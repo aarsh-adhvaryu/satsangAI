@@ -81,6 +81,22 @@ _SECTION_ALIASES = {"gadhada": "G", "sarangpur": "S", "kariyani": "K", "loya": "
                     "panchala": "P", "vartal": "V", "amdavad": "A", "ahmedabad": "A"}
 
 
+# Texts addressed by a SINGLE number rather than chapter.verse. Kept separate from
+# _NUMERIC_REF because that pattern requires a chapter/verse separator and so can never
+# match "Satsang Diksha 12" — the citation form of two of the most-quoted Swaminarayan
+# scriptures. Swamini Vato is excluded deliberately: it is cited "1/21" (prakaran/vato),
+# which _SINGLE_REF would silently truncate to prakaran 1.
+_SINGLE_TEXTS = {
+    r"satsang\s*diksha": "Satsang Diksha",
+    r"satsangdiksha": "Satsang Diksha",
+    r"shikshapatri": "Shikshapatri",
+    r"shikshpatri": "Shikshapatri",
+}
+_SINGLE_REF = re.compile(
+    r"(?P<text>" + "|".join(_SINGLE_TEXTS) + r")\s*(?:shlok(?:a)?|verse|no\.?|#)?\s*"
+    r"(?P<n>\d{1,3})(?!\s*[.:]\s*\d)", re.I)
+
+
 def parse_reference(message: str) -> str | None:
     """Extract a canonical citation prefix from free text, or None.
 
@@ -92,6 +108,12 @@ def parse_reference(message: str) -> str | None:
         name = _TEXT_ALIASES.get(re.sub(r"[\s-]+", " ", m.group("text").lower().strip()))
         if name:
             return f"{name} {int(m.group('ch'))}.{int(m.group('v'))}"
+    m = _SINGLE_REF.search(msg)
+    if m:
+        key = re.sub(r"\s+", " ", m.group("text").lower().strip())
+        for pat, name in _SINGLE_TEXTS.items():
+            if re.fullmatch(pat, key, re.I):
+                return f"{name} {int(m.group('n'))}"
     low = msg.lower()
     if "vachanamrut" in low or "vachanamrit" in low or re.search(r"\bg[i]{1,3}\b", low):
         spelled = msg
