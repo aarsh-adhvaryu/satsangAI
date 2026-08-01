@@ -11,7 +11,7 @@ Yields (event_type, payload) tuples so the API can stream them as SSE.
 """
 from __future__ import annotations
 
-from . import config, creative, safety, verse
+from . import config, creative, safety, schools, verse
 from .generate import stream_reply
 from .memory import PrefsStore, extract_facts
 from .observability import Trace
@@ -63,6 +63,12 @@ def prepare(message: str, history: list[dict] | None = None, mode: str | None = 
     # to be told to look for verses, or the enriched prose wins on every emotional query.
     prefer = verse.VERSE_TEXT_TYPES if (verse_row is None
                                         and verse.wants_verse(message)) else None
+    # Texts the person NAMED. Without this, "the Shikshapatri verse on non-violence"
+    # retrieved the Gita, a biography and a children's primer while all 212 Shikshapatri
+    # shlokas sat unread — and the model captioned the primer's wording "Shikshapatri,
+    # Verse 12". Only applied when no exact reference resolved; an exact hit is already
+    # pinned as [P1] below and needs no help.
+    named_sources = verse.detect_sources(message) if verse_row is None else ()
 
     # §5.3/§5.4 creative request (form + output language).
     creative_form = creative.detect_form(message)
@@ -74,7 +80,8 @@ def prepare(message: str, history: list[dict] | None = None, mode: str | None = 
     with span("retrieve"):
         passages = retrieve(plan["search_queries"], mode=plan.get("mode", "counseling"),
                             rerank_query=plan.get("problem_summary") or message,
-                            prefer_text_types=prefer)
+                            prefer_text_types=prefer,
+                            prefer_sources=named_sources or None)
         if prefer and passages and not creative_form:
             # A verse was asked for and one was found: give it the full §5.2 layered
             # treatment. The Passage carries only what generation needs, so the layers
@@ -92,6 +99,13 @@ def prepare(message: str, history: list[dict] | None = None, mode: str | None = 
             from .retrieve_types import Passage
             pinned = Passage.from_row(verse_row, score=1.0)
             passages = [pinned] + [p for p in passages if p.id != pinned.id]
+
+    # §13.4 in the other direction: not another school leaking into counseling, but this
+    # system speaking FOR a school whose texts the KB no longer holds. Checked after
+    # retrieval because it depends on what was actually found, not on what was asked.
+    named_schools = schools.named_schools(message)
+    if named_schools and not schools.grounded_schools(passages):
+        plan["school_caveat"] = schools.caveat(named_schools)
 
     if creative_form:
         # Built after retrieval: the attribution contract must name the passages actually

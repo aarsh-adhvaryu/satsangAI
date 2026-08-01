@@ -246,6 +246,10 @@ def _user_prompt(message: str, plan: dict, passages: list[Passage],
     creative_block = plan.get("creative_instruction") or ""
     if creative_block:
         creative_block = creative_block + "\n\n"
+    # Named another school with nothing in the passages to ground it (api/schools.py).
+    school_block = plan.get("school_caveat") or ""
+    if school_block:
+        school_block = school_block + "\n\n"
     verse_block = plan.get("verse_block") or ""
     if verse_block and plan.get("verse_selected"):
         # They asked for "a verse about X" without naming one, so THIS verse was CHOSEN by
@@ -262,7 +266,8 @@ def _user_prompt(message: str, plan: dict, passages: list[Passage],
         verse_block = ("THE VERSE THEY ASKED ABOUT — reproduce these layers EXACTLY as given, "
                        "never alter the original, transliteration or word-by-word glosses:\n"
                        f"{verse_block}\n\n")
-    return (f"{mem}{convo}{creative_block}{verse_block}The person wrote:\n\"{message}\"\n\n"
+    return (f"{mem}{convo}{creative_block}{school_block}{verse_block}"
+            f"The person wrote:\n\"{message}\"\n\n"
             f"Their underlying problem: {plan.get('problem_summary','')}\n"
             f"Felt emotion: {emo}\n"
             f"How to help: {plan.get('response_plan','')}\n\n"

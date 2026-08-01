@@ -35,14 +35,17 @@ class Index:
                             zip(self.meta["citation"], self.meta["id"]) if c}
 
     def search(self, qvec: np.ndarray, allowed_traditions=None, k=config.CANDIDATE_K,
-               allowed_text_types=None):
-        """Cosine (dot, both unit-norm) search, optional tradition/text_type allowlists."""
+               allowed_text_types=None, allowed_sources=None):
+        """Cosine (dot, both unit-norm) search, optional tradition/text_type/source allowlists."""
         scores = self.emb @ qvec.astype("float32")
         if allowed_traditions is not None:
             mask = self.meta["tradition"].isin(allowed_traditions).to_numpy()
             scores = np.where(mask, scores, -1.0)
         if allowed_text_types is not None:
             mask = self.meta["text_type"].isin(allowed_text_types).to_numpy()
+            scores = np.where(mask, scores, -1.0)
+        if allowed_sources is not None:
+            mask = self.meta["source"].isin(allowed_sources).to_numpy()
             scores = np.where(mask, scores, -1.0)
         top = np.argpartition(-scores, range(min(k, len(scores))))[:k]
         top = top[np.argsort(-scores[top])]

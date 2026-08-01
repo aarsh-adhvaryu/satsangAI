@@ -211,6 +211,19 @@ def _mode_deterministic(reply: str, passages, mode: str) -> tuple[bool, str]:
             return True, "refused (guard declined to ship an unattributable piece)"
         r = verify_creative(reply, passages)
         return r["all_ok"], ("attribution ok" if r["all_ok"] else "; ".join(r["issues"])[:120])
+    if mode in ("teaching", "counseling", "shastrarth"):
+        # Speaking FOR an acharya school whose primary texts the KB no longer holds. The
+        # hallucination gate cannot see this: the reply invents no verse and no citation,
+        # it just asserts another tradition's doctrine from parametric memory. Measured
+        # 2026-08-01 on "What is Vallabha's Shuddhadvaita position…" — a fluent, sectioned
+        # exposition of Advaita and Shuddhadvaita grounded in nothing.
+        from api import schools
+        named = schools.named_schools(message)
+        if named and not schools.grounded_schools(passages or []):
+            # The honest answer names its limit. Only an UNQUALIFIED exposition fails.
+            if not schools.acknowledges_limit(reply, named):
+                return False, f"expounds {', '.join(named)} with no passage from that school"
+
     if mode == "verse":
         # The layered text was supplied verbatim; the risk is inventing a layer that the KB
         # does not have. We cannot diff every layer here, but we CAN catch the model

@@ -6,16 +6,21 @@ as trustworthy as the citation verifier: the model narrates a verse it cannot al
 
 Two data realities shape this module, both measured against the live index:
 
-1. `original` is NOT all Devanagari. Across the 17,794-row core: Gujarati 8,466,
-   **Latin 7,208**, Devanagari 1,476, Kannada 643. Shikshapatri and Satsang Diksha ship
-   already-romanised, and the Upanishads are a mix of Kannada, Devanagari and Latin. So
-   the source script is detected per verse; hardcoding Devanagari silently passes other
-   scripts through unchanged (the bug that surfaced on an Atharvana Upanishad row).
+1. `original` is NOT all Devanagari. Shikshapatri and Satsang Diksha ship
+   already-romanised (which is why their transliteration field is empty), and other
+   sources carry Gujarati or Devanagari. So the source script is detected per verse;
+   hardcoding Devanagari silently passes other scripts through unchanged (the bug that
+   surfaced on an Atharvana Upanishad row, before that source was removed).
 
-2. Only some texts are verse-addressable. Gita (719) and Yoga Sutras (195) use
-   'Name C.V'; Vachanamrut (273) uses 'Vachanamrut GI-1: title'. Shikshapatri, Satsang
-   Diksha and the Upanishads are stored as PAGE chunks ('… p1-2'), so "Shikshapatri
-   verse 12" cannot resolve — those fall back to ordinary semantic retrieval.
+2. Only some texts are verse-addressable. Measured against the current 22,838-row index:
+   satsangijivanam 2,506 · bhagavad_gita 719 · satsang_diksha 315 · shikshapatri 212 ·
+   yoga_sutras 195 carry text_type='verse'; Vachanamrut (273) uses 'Vachanamrut GI-1:
+   title'. NOTE this changed with the 2026-07 rebuild: Shikshapatri is now 212 addressable
+   shlokas ('Shikshapatri 12'), not the page chunks this module was written against.
+
+Naming a text is not the same as numbering one. `parse_reference` resolves "Shikshapatri
+12"; `detect_sources` handles "the Shikshapatri verse on non-violence", which is the
+commoner request and which used to reach retrieval with no source constraint at all.
 """
 from __future__ import annotations
 
@@ -69,6 +74,55 @@ _TEXT_ALIASES = {
     "yogasutra": "Yoga Sutras", "patanjali": "Yoga Sutras",
     "vachanamrut": "Vachanamrut", "vachanamrit": "Vachanamrut",
 }
+# Named TEXTS -> the `source` column, for requests that name a scripture without giving a
+# number ("the Shikshapatri verse on non-violence", "what does the Vachanamrut say about
+# anger"). parse_reference handles "Shikshapatri 12"; this handles the far commoner case
+# where someone names the book and describes the teaching instead of numbering it.
+_SOURCE_ALIASES = {
+    r"shikshapatri|shiksha\s*patri|shikshpatri": "shikshapatri",
+    r"vachanamrut|vachanamrit|vachnamrut": "vachanamrut",
+    r"satsang\s*diksha|satsangdiksha": "satsang_diksha",
+    r"swamini\s*vato|swamini\s*vaat|swaminivato": "swamini_vato",
+    r"bhagavad[\s-]?gita|bhagavadgita|geeta|\bgita\b|\bbg\b": "bhagavad_gita",
+    r"yoga\s*sutras?|yogasutra|patanjali": "yoga_sutras",
+    r"chanakya(\s*niti)?": "chanakya_niti",
+    r"kirtan\s*muktavali|kirtan\s*mukta": "kirtan_muktavali",
+    r"harililamrut|hari\s*lila\s*mrut": "harililamrut",
+    r"bhaktachintamani|bhakta\s*chintamani": "bhaktachintamani",
+    r"satsangijivanam|satsangi\s*jivanam": "satsangijivanam",
+    r"janmangal|janma\s*mangal": "janmangal_namavali",
+    r"nishkulanand": "nishkulanand_kavya",
+    r"swaminarayan\s*bhashyam": "swaminarayan_bhashyam",
+}
+_SOURCE_RE = [(re.compile(pat, re.I), src) for pat, src in _SOURCE_ALIASES.items()]
+
+
+def detect_sources(message: str) -> tuple[str, ...]:
+    """Sources explicitly NAMED in the message, for retrieval preference. Order-stable."""
+    out: list[str] = []
+    for rx, src in _SOURCE_RE:
+        if rx.search(message) and src not in out:
+            out.append(src)
+    return tuple(out)
+
+
+def strip_source_names(text: str) -> str:
+    """Remove named-scripture words from a query used against that SAME source.
+
+    Once retrieval is restricted to `shikshapatri`, the word "Shikshapatri" in the query
+    is not merely redundant, it is harmful: it matches the verses that NAME the text —
+    its opening and closing shlokas — over the verses that teach the topic asked about.
+    Measured on "the Shikshapatri verse on non-violence": with the name in the query the
+    top hits are Shikshapatri 2, 3 and 211 (the colophon-ish framing verses); with the
+    name removed they are 12, 11 and 124, which are the actual non-violence shlokas.
+    """
+    out = str(text or "")
+    for rx, _src in _SOURCE_RE:
+        out = rx.sub(" ", out)
+    # tidy the holes the substitution leaves ("the  verse on non-violence")
+    return re.sub(r"\s{2,}", " ", out).strip(" ,.;:-") or str(text or "")
+
+
 # "Gita 2.47" / "BG 2:47" / "Yoga Sutras 1.2" / "Gita chapter 2 verse 47"
 _NUMERIC_REF = re.compile(
     r"(?P<text>bhagavad[\s-]?gita|bhagavadgita|gita|geeta|bg|yoga\s*sutras?|yogasutra|patanjali)"
