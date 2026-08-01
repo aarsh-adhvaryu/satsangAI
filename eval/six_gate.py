@@ -222,10 +222,18 @@ def _mode_deterministic(reply: str, passages, mode: str) -> tuple[bool, str]:
         # failing a reply that had correctly declined to invent one — the same
         # detector-fires-on-the-refusal bug seen with _MEDICAL and _PUSHBACK. One
         # implementation, shared, is the only thing that stops this recurring.
-        from api.verse import claims_word_by_word
+        from api.verse import claims_grammar, claims_token_glosses, claims_word_by_word
         wm = str(getattr(passages[0], "word_meanings", "") or "")
-        if claims_word_by_word(reply) and not wm.strip():
-            return False, "claims a word-by-word breakdown the KB does not have"
+        if not wm.strip():
+            if claims_word_by_word(reply):
+                return False, "claims a word-by-word breakdown the KB does not have"
+            # Same fabrication relabelled: glosses under an innocuous heading, or none.
+            if claims_token_glosses(reply):
+                return False, "defines individual Sanskrit words the KB does not gloss"
+        # §17 morphology has no KB storage for ANY verse, so a grammatical analysis is
+        # always recalled rather than retrieved — unconditional, unlike word-by-word.
+        if claims_grammar(reply):
+            return False, "claims a grammatical analysis the KB does not store for any verse"
         return True, "verse layers ok"
     return True, ""
 
@@ -284,8 +292,10 @@ def _live_reply(message: str, temperature: float | None = None):
     plan, passages = prepare(message)
     # generate_reply — NOT stream_reply — so the creative §19 guard, the faithfulness
     # guard and any future generation-time protection are all exercised by the eval.
+    # `temperature` was accepted here and then dropped on the floor: it never reached
+    # generation, so every documented "--temperature 0" A/B ran at the served 1.0.
     reply = ""
-    for item in generate_reply(message, plan, passages):
+    for item in generate_reply(message, plan, passages, temperature=temperature):
         if isinstance(item, tuple) and item and item[0] == "__done__":
             reply = item[1][0]
     return reply, passages, plan.get("mode", "counseling"), plan.get("verse_block", "")
@@ -342,21 +352,39 @@ def main() -> None:
 
     probes = [p for p in PROBES if not a.gate or p["gate"] == a.gate]
 
-    # RESUMABILITY: a --k 3 run is ~195 generations + 195 judge calls (~2h of API). Each scored
-    # reply is appended to a sidecar .partial.jsonl and flushed immediately, and a re-run of the
-    # SAME command skips every (message, sample) already there. A hard kill costs only the
-    # in-flight probe; a truncated final line is tolerated.
+    # RESUMABILITY: a --k 3 run is ~195 generations + 195 judge calls (~2h of API, or ~3h of
+    # GPU on the 26B). Each scored reply is appended to a sidecar .partial.jsonl and flushed
+    # immediately, and a re-run of the SAME command skips every (message, sample) already
+    # there. A hard kill costs only the in-flight probe; a truncated final line is tolerated.
+    #
+    # RESUME IS BACKEND-SCOPED, and that is not a nicety. The key used to be
+    # (message, sample) alone, so pointing `--backend gemma` at a sidecar left over from a
+    # Claude run would mark all 297 replies done, generate NOTHING, and write a results file
+    # stamped "backend": "gemma" containing pure Claude output — a fabricated baseline, and
+    # exactly the kind of measurement-of-the-wrong-thing this harness keeps producing.
+    # Rows from a different backend are ignored for BOTH resume and scoring; rows written
+    # before this field existed carry no backend and are never reused.
+    run_backend = a.backend if not a.from_file else f"file:{a.from_file}#{a.adapter}"
     partial = Path(str(a.out) + ".partial.jsonl")
     details: list[dict] = []
+    foreign = 0
     if partial.exists():
         for line in partial.read_text().splitlines():
             line = line.strip()
             if not line:
                 continue
             try:
-                details.append(json.loads(line))
+                d = json.loads(line)
             except json.JSONDecodeError:
                 continue            # truncated last line from a hard kill
+            if d.get("backend") != run_backend:
+                foreign += 1
+                continue
+            details.append(d)
+    if foreign:
+        print(f"!! {partial} holds {foreign} replies from a DIFFERENT backend "
+              f"(this run is '{run_backend}') — ignoring them. They are neither resumed "
+              f"nor scored. Use a separate --out per backend to keep runs apart.")
     done = {(d["message"], d.get("sample", 0)) for d in details}
     if done:
         print(f"resuming: {len(done)} replies already scored in {partial}")
@@ -372,7 +400,8 @@ def main() -> None:
         s = _score_one(msg, psg, reply, gate, mode, extra_context=extra_context,
                        judge_model=_JUDGES[a.judge])
         d = {"probe_gate": gate, "mode": mode, "message": msg, "reply": reply,
-             "sample": s_i, "expect_mode": expect_mode, "mode_check": s["_mode_check"],
+             "sample": s_i, "backend": run_backend,
+             "expect_mode": expect_mode, "mode_check": s["_mode_check"],
              "passages_block": _passages_block(psg),
              **{k: s[k] for k in THRESHOLDS}, "ragas_parts": s["_ragas_parts"]}
         with _write_lock:
@@ -506,7 +535,7 @@ def main() -> None:
          "deploy_by_mode": per_mode,
          "counseling_deploy": counsel_ok,      # kept: older tooling reads this key
          "all_probes_combined": all_ok,
-         "backend": a.backend if not a.from_file else f"file:{a.from_file}#{a.adapter}",
+         "backend": run_backend,
          "judge": a.judge,
          "thresholds": THRESHOLDS, "n": len(details),
          "k": a.k, "temperature": a.temperature,

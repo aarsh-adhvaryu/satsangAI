@@ -233,15 +233,125 @@ def verse_view(row: dict) -> dict:
 
 _WBW_HEADING = re.compile(
     r"(?im)^[\s>*_#-]*\**\s*word[\s-]*by[\s-]*word\b.*$|^[\s>*_#-]*\**\s*word\s+meanings\b.*$")
+
+# §17 morphological analysis — dhatu, case endings, compound structure — is in the
+# proposal but has NO STORAGE ANYWHERE IN THE KB. There is no morphology column, and
+# `word_meanings` carries flat glosses ("śhreyān | better"), never grammar. So a
+# grammatical analysis is ALWAYS recalled from the model rather than retrieved — for
+# every verse, including the 701 Gita rows that do have stored glosses.
+#
+# That is why this guard is UNCONDITIONAL where the word-by-word guard is conditional.
+# Measured 2026-08-01: the 5 morphology probes scored persona 0.357 / scripture 0.500,
+# the worst of any mode, on replies that read beautifully — "śhreyān is a comparative
+# adjective in the nominative singular" is exactly the confident, unverified Sanskrit
+# the zero-hallucination guarantee exists to catch.
+_GRAMMAR_HEADING = re.compile(
+    r"(?im)^[\s>*_#-]*\**\s*("
+    r"(the\s+)?(sanskrit\s+)?grammar\b"
+    r"|grammatical\s+(analysis|breakdown|notes?|structure)"
+    r"|morpholog\w*"
+    r"|(word|verbal|sanskrit)\s+roots?\b|dh[aā]tu\b|etymolog\w*"
+    r"|case\s+endings?\b|declension|conjugation"
+    r"|compound\s+(analysis|structure|breakdown)|sam[aā]sa\b"
+    r").*$")
+
+# A skipped section runs until one of the real verse layers resumes. Grammar headings
+# are listed here too, so stripping a word-by-word block stops cleanly where the
+# grammar block begins and the grammar strip can then handle it.
 _NEXT_HEADING = re.compile(r"(?im)^[\s>*_#-]*\**\s*(meaning|translation|original|"
-                           r"transliteration|explanation|what this means)\b")
+                           r"transliteration|explanation|what this means|"
+                           r"grammar|grammatical|morpholog)\b")
 
 _NO_WBW_NOTE = ("*(A word-by-word breakdown isn't recorded for this verse in my sources, "
                 "so I won't invent one.)*")
 
+_NO_GRAMMAR_NOTE = ("*(A grammatical breakdown — roots, case endings, compound structure — "
+                    "isn't recorded for this verse in my sources. I won't reconstruct one "
+                    "from memory, because I'd have no way to show you it was right.)*")
+
 
 def claims_word_by_word(reply: str) -> bool:
     return bool(_WBW_HEADING.search(reply))
+
+
+def claims_grammar(reply: str) -> bool:
+    return bool(_GRAMMAR_HEADING.search(reply))
+
+
+# A gloss has a SHAPE, independent of what the section is called: an emphasised Sanskrit
+# token, a dash, a definition. Matching the shape rather than the heading is deliberate.
+#
+# Measured 2026-08-01: the heading guard worked and the model routed around it. Asked to
+# break down Yoga Sutras 1.2 it wrote "*(No word-by-word gloss was supplied for this
+# verse…)*" — the honest decline the guard exists to produce — and then, under the
+# heading "Breaking Down the Three Key Words", supplied exactly that gloss anyway:
+# "**Chitta** — the mind-stuff", "**Vṛtti** — literally 'whirlpool'". Same fabrication,
+# relabelled. Only 2 of 62 verse replies tripped a heading pattern; the judge failed far
+# more, because the content was there under other names.
+_TOKEN_GLOSS = re.compile(
+    r"(?m)^\W{0,4}[*_]{1,2}\s*"
+    r"([A-Za-zāīūṛṝḷṅñṭḍṇśṣḥṃṁ][A-Za-zāīūṛṝḷṅñṭḍṇśṣḥṃṁ'’-]{1,24})"
+    r"\s*[*_]{1,2}\s*[—–-]{1,2}\s+\S")
+
+
+def claims_token_glosses(reply: str, min_hits: int = 2) -> bool:
+    """True when the reply defines individual Sanskrit words, whatever it calls the section.
+
+    Only meaningful when the verse has NO stored word_meanings — the Gita's 701 glossed
+    rows render a legitimate gloss table of exactly this shape. Two hits are required so
+    a single emphasised term inside ordinary explanation is not mistaken for a glossary.
+    """
+    return len(_TOKEN_GLOSS.findall(reply)) >= min_hits
+
+
+def _strip_section(reply: str, heading: re.Pattern, note: str) -> str:
+    """Drop every line from `heading` until a real verse layer resumes, leaving `note`.
+
+    Fails CLOSED: if no recognised layer heading follows, the skip runs to the end of
+    the reply. Removing too much is recoverable; leaving invented Sanskrit in place is
+    not.
+    """
+    out, skipping = [], False
+    for line in reply.splitlines():
+        if heading.match(line):
+            if not skipping:
+                out.append(note)
+            skipping = True
+            continue
+        if skipping:
+            if _NEXT_HEADING.match(line) and not heading.match(line):
+                skipping = False
+                out.append(line)
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def strip_token_glosses(reply: str) -> str:
+    """Drop individual token-gloss lines, leaving one honest note in their place.
+
+    Line-wise rather than section-wise because the laundered version has no section to
+    remove — the glosses sit under an innocuous heading, or under none at all.
+    """
+    out, noted = [], False
+    for line in reply.splitlines():
+        if _TOKEN_GLOSS.match(line):
+            if not noted:
+                out.append(_NO_WBW_NOTE)
+                noted = True
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def strip_grammar(reply: str) -> str:
+    """Remove a grammatical/morphological analysis and say plainly we don't store one.
+
+    Deterministic for the same reason as strip_word_by_word: the model is convincingly
+    right often enough that only a rule, not a judgement, can hold the line. See
+    _GRAMMAR_HEADING for why this applies to every verse rather than only unglossed ones.
+    """
+    return _strip_section(reply, _GRAMMAR_HEADING, _NO_GRAMMAR_NOTE)
 
 
 def strip_word_by_word(reply: str) -> str:

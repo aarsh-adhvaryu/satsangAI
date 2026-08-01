@@ -108,7 +108,8 @@ def prepare(message: str, history: list[dict] | None = None, mode: str | None = 
 
 
 
-def generate_reply(message: str, plan: dict, passages, history=None, facts=None):
+def generate_reply(message: str, plan: dict, passages, history=None, facts=None,
+                   temperature: float | None = None):
     """Generation, shared by `respond()` and the eval harness. A GENERATOR: yields text
     chunks, then finally yields ("__done__", (reply, extras)).
 
@@ -118,6 +119,14 @@ def generate_reply(message: str, plan: dict, passages, history=None, facts=None)
     creative §19 guard — so a whole run scored creative 0.417 while measuring a code path
     the product does not use. Anything that decides what the user finally sees belongs
     here, and both callers get it.
+
+    `temperature` is EVALUATION-ONLY (None = the served default). It exists because
+    six_gate's `--temperature` was accepted, documented as the way to remove generation
+    variance from an A/B, and then silently dropped here: stream_reply supported it,
+    generate_reply did not forward it, so every "temperature 0" comparison was actually
+    run at 1.0 — through the same ±0.13 noise the flag was meant to eliminate. The
+    creative and faithfulness guards run their own multi-call protocols and keep the
+    served temperature; those two modes cannot be made deterministic this way.
     """
     if plan.get("creative_form") and plan.get("creative_language"):
         # Buffered, not streamed: §19 must be checked BEFORE anything reaches the person,
@@ -127,23 +136,53 @@ def generate_reply(message: str, plan: dict, passages, history=None, facts=None)
         yield reply
         yield "__done__", (reply, {"attribution": attribution})
         return
-    if plan.get("mode") == "verse" and passages and not str(
-            getattr(passages[0], "word_meanings", "") or "").strip():
-        # §5.2 verse guard, same shape as the creative one. The verse has NO stored
-        # word-by-word, so any breakdown is recalled rather than retrieved. Give the model
-        # one corrected attempt, then remove the section deterministically — the guarantee
-        # cannot depend on the model choosing to comply.
-        reply = "".join(stream_reply(message, plan, passages, history=history, facts=facts))
-        if verse.claims_word_by_word(reply):
+    if plan.get("mode") == "verse" and passages:
+        # §5.2 verse guard, same shape as the creative one: generate, check, one corrected
+        # attempt, then strip deterministically — the guarantee cannot depend on the model
+        # choosing to comply.
+        #
+        # TWO independent unverifiable layers, with different trigger conditions:
+        #   word-by-word — only when THIS verse has no stored word_meanings (the Gita's
+        #     701 glossed rows may legitimately show one).
+        #   grammar/morphology — ALWAYS. §17 has no KB storage whatsoever, so no verse
+        #     can ever support a dhatu/case analysis. This is why the branch now runs for
+        #     every verse reply rather than only unglossed ones; the cost is that verse
+        #     mode is buffered rather than streamed, which it already was for unglossed
+        #     verses and which verse replies are short enough to absorb.
+        no_wbw = not str(getattr(passages[0], "word_meanings", "") or "").strip()
+        reply = "".join(stream_reply(message, plan, passages, history=history, facts=facts,
+                                     temperature=temperature))
+
+        # `claims_token_glosses` catches the SHAPE of a gloss under any heading. Without
+        # it the model complies with the letter of the guard and then supplies the same
+        # fabricated glosses under "Breaking Down the Three Key Words" — measured, twice.
+        bad_wbw = no_wbw and (verse.claims_word_by_word(reply)
+                              or verse.claims_token_glosses(reply))
+        bad_gram = verse.claims_grammar(reply)
+        if bad_wbw or bad_gram:
+            note = ""
+            if bad_wbw:
+                note += ("\n\nNOTE: this verse has NO word-by-word breakdown in the "
+                         "database. Do NOT supply one, even if you believe you know the "
+                         "Sanskrit — say plainly that it isn't recorded, and give the rest "
+                         "of the layers. This applies however the section is labelled: do "
+                         "not define the individual Sanskrit words under any other heading "
+                         "either. Explain the verse's MEANING as a whole instead.")
+            if bad_gram:
+                note += ("\n\nNOTE: there is NO stored grammatical or morphological "
+                         "analysis for ANY verse — no roots, case endings or compound "
+                         "structure. Do NOT produce one, however confident you are. Say it "
+                         "isn't recorded and explain the verse's meaning instead.")
             retry = dict(plan)
-            retry["verse_block"] = (plan.get("verse_block", "") +
-                                    "\n\nNOTE: this verse has NO word-by-word breakdown in "
-                                    "the database. Do NOT supply one, even if you believe "
-                                    "you know the Sanskrit — say plainly that it isn't "
-                                    "recorded, and give the rest of the layers.")
-            reply = "".join(stream_reply(message, retry, passages, history=history, facts=facts))
-            if verse.claims_word_by_word(reply):
+            retry["verse_block"] = plan.get("verse_block", "") + note
+            reply = "".join(stream_reply(message, retry, passages, history=history, facts=facts,
+                                         temperature=temperature))
+            if no_wbw and verse.claims_word_by_word(reply):
                 reply = verse.strip_word_by_word(reply)
+            if no_wbw and verse.claims_token_glosses(reply):
+                reply = verse.strip_token_glosses(reply)
+            if verse.claims_grammar(reply):
+                reply = verse.strip_grammar(reply)
         yield reply
         yield "__done__", (reply, {"verse_guard": True})
         return
@@ -154,7 +193,8 @@ def generate_reply(message: str, plan: dict, passages, history=None, facts=None)
         yield "__done__", (reply, {"faithfulness": faith})
         return
     full = []
-    for chunk in stream_reply(message, plan, passages, history=history, facts=facts):
+    for chunk in stream_reply(message, plan, passages, history=history, facts=facts,
+                              temperature=temperature):
         full.append(chunk)
         yield chunk
     reply = "".join(full)
