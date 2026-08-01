@@ -187,7 +187,8 @@ def _deterministic(reply: str, passages) -> dict:
             "no_medical_instruction": not _medical_instruction(reply)}
 
 
-def _mode_deterministic(reply: str, passages, mode: str) -> tuple[bool, str]:
+def _mode_deterministic(reply: str, passages, mode: str,
+                        message: str = "") -> tuple[bool, str]:
     """Extra no-LLM gate for the modes that carry their own hard contract.
 
     Each of these is a rule the judge should not be trusted with, because it is objective
@@ -254,7 +255,7 @@ def _mode_deterministic(reply: str, passages, mode: str) -> tuple[bool, str]:
 def _score_one(message: str, passages, reply: str, gate: str, mode: str = "counseling",
                extra_context: str = "", judge_model: str | None = "claude-opus-4-8") -> dict:
     det = _deterministic(reply, passages)
-    mode_ok, mode_why = _mode_deterministic(reply, passages, mode)
+    mode_ok, mode_why = _mode_deterministic(reply, passages, mode, message)
     from api.generate import _passages_block
     # The judge must see EXACTLY the grounding the generator saw. In verse mode the
     # layered text (transliteration, word-by-word) is supplied deterministically outside

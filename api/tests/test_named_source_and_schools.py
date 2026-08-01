@@ -93,6 +93,38 @@ def main() -> None:
     if schools.grounded_schools([]):
         fails.append("grounded_schools true on an empty passage list")
 
+    # EXECUTE the scoring path for every mode. The school gate shipped with `message`
+    # referenced but never passed to _mode_deterministic — a NameError that only fired
+    # after a 4.5-minute model load, on the first probe of a GPU run. Unit-testing the
+    # detectors was not enough; the caller has to be exercised too.
+    from api.retrieve_types import Passage
+    from eval.six_gate import _mode_deterministic, _score_one
+    row = {"id": "bhagavad_gita_2.47", "source": "bhagavad_gita",
+           "citation": "Bhagavad Gita 2.47", "original": "कर्मण्येवाधिकारस्ते",
+           "translation": "You have a right to action alone.",
+           "word_meanings": "karmani|in action", "contextual_explanation": "Do your duty.",
+           "tradition": "shared_hindu", "text_type": "verse"}
+    psg = [Passage.from_row(row, 1.0)]
+    modes = [("counseling", "I feel alone", "I hear you. [P1]", True),
+             ("teaching", "Do Hindus believe in reincarnation?", "The atma is eternal [P1].", True),
+             ("teaching", "What is Vallabha's Shuddhadvaita position?",
+              "### Vallabha's view\nThe world is real.", False),
+             ("teaching", "What is Vallabha's Shuddhadvaita position?",
+              "I don't hold Vallabha's own texts here. From this tradition [P1]…", True),
+             ("verse", "Explain Gita 2.47", "## Meaning\nDo your duty [P1].", True),
+             ("verse", "Break down the grammar of Gita 2.47",
+              "## Sanskrit Grammar\nkarmani is locative.", False),
+             ("creative", "Write me a poem in English",
+              "A poem.\n\nInspired by Bhagavad Gita 2.47 [P1]", True),
+             ("out_of_domain", "What is the best mutual fund?", "I can't help with that.", True)]
+    for mode, msg, reply, want in modes:
+        got, why = _mode_deterministic(reply, psg, mode, msg)
+        if got != want:
+            fails.append(f"_mode_deterministic[{mode}] = {got} ({why}), want {want}")
+        # and the full scorer as the deterministic run actually calls it
+        _score_one(msg, psg, reply, "hallucination", mode, judge_model=None)
+
+    print(f"mode-gate paths     {len(modes)}/{len(modes)}")
     print(f"named-source cases  {len(SOURCE_CASES)}/{len(SOURCE_CASES)}")
     print(f"named-school cases  {len(SCHOOL_CASES)}/{len(SCHOOL_CASES)}")
     print(f"honest replies      {len(HONEST)}/{len(HONEST)}")
