@@ -73,7 +73,16 @@ def main() -> None:
     # 3. new vectors into embeddings.f32 at the matching row positions
     mm = np.memmap(F32, dtype="float32", mode="r+", shape=(meta["rows"], dim))
     positions = rows["id"].map(pos).to_numpy()
-    mm[positions] = emb
+    # Vectors must come from the MATCHED subset, not the full enriched set. `emb` was
+    # built from `enr` (every enriched row, including ids no longer in the corpus after
+    # source exclusions/re-chunking), so `mm[positions] = emb` raised a shape mismatch:
+    # 26,267 vectors into 23,254 slots. Worse than the crash is where it crashed — the
+    # text fields had already been written, leaving enrichment in the corpus with stale
+    # vectors, which retrieval cannot detect.
+    emb_matched = np.asarray(rows["embedding"].tolist(), dtype="float32")
+    assert len(emb_matched) == len(positions), \
+        f"{len(emb_matched)} vectors for {len(positions)} positions"
+    mm[positions] = emb_matched
     mm.flush()
     print(f"overwrote {len(positions)} vectors in {F32.name}")
     print("\nDONE. Review, then push: "

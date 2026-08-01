@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import functools
 import json
+import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -292,7 +293,11 @@ def _live_reply(message: str, temperature: float | None = None):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--backend", default="claude", help="generate live via V1 pipeline")
+    ap.add_argument("--backend", default="env", choices=["env", "claude", "gemma"],
+                    help="which runtime to MEASURE. 'claude' = V1 (Sonnet, CPU+API); "
+                         "'gemma' = the from-scratch V2 adapter for BOTH generation and "
+                         "utility calls, i.e. the Claude-free runtime (needs a GPU); "
+                         "'env' (default) respects whatever SATSANG_*_BACKEND is already set.")
     ap.add_argument("--from-file", default=None, help="score saved eval_gates replies instead")
     ap.add_argument("--adapter", default="dpo2", help="which adapter's replies (with --from-file)")
     ap.add_argument("--n", type=int, default=len(PROBES))
@@ -318,6 +323,22 @@ def main() -> None:
                          "does. Results are identical — only the order they arrive changes.")
     ap.add_argument("--out", default="eval/six_gate_results.json")
     a = ap.parse_args()
+
+    # `--backend` USED TO BE DECORATIVE: it was parsed, defaulted to "claude", and then
+    # never read, so the runtime was whatever SATSANG_*_BACKEND happened to be in the
+    # shell. `--backend gemma` would have silently measured Claude. That is how the
+    # 2026-07-31 k=3 run came to be filed as a deploy gate for a model it never touched.
+    # Now it actually selects the runtime — and it must happen BEFORE the first api
+    # import, because api.config reads these vars once at module load. Every api import
+    # in this file is lazy (inside functions) precisely so this can work.
+    if a.backend != "env":
+        os.environ["SATSANG_GEN_BACKEND"] = a.backend
+        os.environ["SATSANG_UTILITY_BACKEND"] = a.backend
+    from api import config as _cfg
+    print(f"backend: generation={_cfg.GEN_BACKEND} utility={_cfg.UTILITY_BACKEND} "
+          f"({'CLAUDE-FREE' if _cfg.GEN_BACKEND == _cfg.UTILITY_BACKEND == 'gemma' else 'uses Anthropic'})")
+    if _cfg.GEN_BACKEND == "gemma":
+        print(f"adapter: {_cfg.GEMMA_ADAPTER}")
 
     probes = [p for p in PROBES if not a.gate or p["gate"] == a.gate]
 
@@ -451,11 +472,12 @@ def main() -> None:
     # its own evidence.
     counseling = [x for x in details if x["mode"] == "counseling"]
     counsel_ok = _decide(counseling, "COUNSELING (the shipped product)")
+    per_mode: dict[str, bool] = {"counseling": counsel_ok}
     for m in ("teaching", "verse", "creative", "out_of_domain", "shastrarth"):
         subset = [x for x in details if x["mode"] == m]
         if subset:
-            _decide(subset, f"{m.upper()}")
-    _decide(details, "ALL probes combined")
+            per_mode[m] = _decide(subset, f"{m.upper()}")
+    all_ok = _decide(details, "ALL probes combined")
 
     if a.k > 1:
         # How often did the SAME probe get different verdicts across its k draws? This is the
@@ -471,12 +493,30 @@ def main() -> None:
         print(f"  {'ragas':<20} mean within-probe spread {sum(spreads)/len(spreads):.3f}, "
               f"max {max(spreads):.3f}")
 
+    # PERSIST EVERY MODE'S VERDICT, not just counseling's. The console has always printed
+    # the segmented table, but only `counseling_deploy` was written to the file — so the
+    # saved artifact of the 2026-07-31 run read `counseling_deploy: true` while verse
+    # (hallucination 0.758 / persona 0.694 / scripture 0.710), teaching, creative and
+    # out_of_domain were all failing. Anyone reading the JSON instead of the scrollback
+    # saw a green light. `deploy` is now the honest headline: every mode must pass.
+    failing = sorted(m for m, ok in per_mode.items() if not ok)
     Path(a.out).write_text(json.dumps(
-        {"counseling_deploy": counsel_ok, "thresholds": THRESHOLDS, "n": len(details),
+        {"deploy": all(per_mode.values()),
+         "failing_modes": failing,
+         "deploy_by_mode": per_mode,
+         "counseling_deploy": counsel_ok,      # kept: older tooling reads this key
+         "all_probes_combined": all_ok,
+         "backend": a.backend if not a.from_file else f"file:{a.from_file}#{a.adapter}",
+         "judge": a.judge,
+         "thresholds": THRESHOLDS, "n": len(details),
          "k": a.k, "temperature": a.temperature,
          "n_probes": len({d["message"] for d in details}),
          "details": details}, indent=2, ensure_ascii=False))
-    print(f"\nwrote {a.out}  |  COUNSELING deploy = {'YES' if counsel_ok else 'NO'}")
+    print(f"\nwrote {a.out}")
+    print(f"  backend={a.backend if not a.from_file else a.from_file}  judge={a.judge}")
+    print(f"  COUNSELING deploy = {'YES' if counsel_ok else 'NO'}")
+    print(f"  ALL MODES deploy  = {'YES' if all(per_mode.values()) else 'NO'}"
+          + (f"   (failing: {', '.join(failing)})" if failing else ""))
     print(f"(resume sidecar {partial} kept — delete it to force a fresh run)")
 
 
