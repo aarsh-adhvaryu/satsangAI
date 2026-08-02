@@ -307,8 +307,24 @@ def stream_reply(message: str, plan: dict, passages: list[Passage],
 def _gemma():
     """Lazy-load the base + the V2 SFT adapter once. GPU-only (~52 GB bf16). Reuses the
     hardware-aware loader from v2/train_config (Hopper grouped_mm vs Blackwell eager)."""
-    from peft import PeftModel
     from v2 import train_config as C
+    if config.GEMMA_MODEL:
+        # Standalone merged/quantized weights: the LoRA is already baked in, so there is
+        # no adapter to attach — and none to DISABLE, which changes one thing. api/llm.py
+        # normally serves utility calls from the base by calling model.disable_adapter();
+        # a merged model has no such method, so utility calls run on the tuned weights
+        # too. It is a real difference from the adapter path, and it is the price of
+        # serving one quantized artifact. The guard in api/llm.py already handles the
+        # missing method, so this degrades cleanly rather than crashing.
+        model, tok = C.load_base("bf16", model_id=config.GEMMA_MODEL)
+        model.config.use_cache = True
+        if tok.pad_token_id is None:
+            tok.pad_token = tok.eos_token
+        model.eval()
+        print(f"[gemma] serving STANDALONE model: {config.GEMMA_MODEL}")
+        return model, tok
+
+    from peft import PeftModel
     base, tok = C.load_base("bf16")
     base.config.use_cache = True
     if tok.pad_token_id is None:

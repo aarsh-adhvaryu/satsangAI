@@ -75,6 +75,11 @@ UNDERSTAND_MODEL = PLAN_MODEL          # alias used by api/llm.py when routing t
 GEMMA_ADAPTER = os.environ.get(
     "SATSANG_GEMMA_ADAPTER", str(ROOT / "v2" / "data" / "gemma4-v2-dpo2-lora"))
 GEMMA_MAX_NEW_TOKENS = int(os.environ.get("SATSANG_GEMMA_MAX_NEW_TOKENS", "512"))
+# A STANDALONE model directory (merged, or merged+quantized) to serve instead of
+# base+GEMMA_ADAPTER. Set it and the adapter is ignored — the tuning is already baked in.
+# This is what makes the §21 deploy chain measurable: without it nothing could load the
+# quantized weights, so "prove 4-bit holds the gates" had no way to run.
+GEMMA_MODEL = os.environ.get("SATSANG_GEMMA_MODEL", "")
 
 # Traditions
 HOME_TRADITION = "swaminarayan"                  # Akshar-Purushottam / BAPS

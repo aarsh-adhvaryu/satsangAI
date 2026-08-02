@@ -85,9 +85,16 @@ def tune_runtime(require_free_gb: float | None = BF16_WEIGHTS_GB) -> dict:
     return gpu
 
 
-def load_base(precision: str = "bf16"):
+def load_base(precision: str = "bf16", model_id: str | None = None):
     """Load Gemma-4 MoE on CUDA at max quality. precision: 'bf16' (default, no
-    quantization) or '4bit' (QLoRA fallback). Picks the MoE kernel by GPU."""
+    quantization) or '4bit' (QLoRA fallback). Picks the MoE kernel by GPU.
+
+    `model_id` overrides the HF base — needed to serve a MERGED or QUANTIZED model
+    from disk. Without it the deploy chain had no last step: quantize.py tells you to
+    prove 4-bit against the gates, but nothing could load the quantized weights.
+    A model saved by bitsandbytes carries its own quantization_config, so passing the
+    directory here re-quantizes on load; do not also pass precision='4bit'.
+    """
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
     gpu = detect_gpu()
@@ -97,8 +104,9 @@ def load_base(precision: str = "bf16"):
     if precision == "4bit":
         kw["quantization_config"] = bnb_config()
 
-    tok = AutoTokenizer.from_pretrained(MODEL)
-    model = AutoModelForCausalLM.from_pretrained(MODEL, **kw)
+    src = model_id or MODEL
+    tok = AutoTokenizer.from_pretrained(src)
+    model = AutoModelForCausalLM.from_pretrained(src, **kw)
     model.config.use_cache = False
     return model, tok
 

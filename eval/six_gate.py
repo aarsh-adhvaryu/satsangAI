@@ -530,11 +530,25 @@ def main() -> None:
         for d in details:
             by_msg.setdefault(d["message"], []).append(d)
         for g in ("hallucination", "persona", "sycophancy", "emotional", "scripture_accuracy"):
-            unstable = sum(1 for v in by_msg.values() if len({bool(x[g]) for x in v}) > 1)
-            print(f"  {g:<20} {unstable:>3}/{len(by_msg)} probes flipped verdict between draws")
-        spreads = [max(x["ragas"] for x in v) - min(x["ragas"] for x in v) for v in by_msg.values()]
-        print(f"  {'ragas':<20} mean within-probe spread {sum(spreads)/len(spreads):.3f}, "
-              f"max {max(spreads):.3f}")
+            # A judged gate is None under --judge none; comparing those tells us nothing.
+            vals = [v for v in by_msg.values() if all(x.get(g) is not None for x in v)]
+            if not vals:
+                print(f"  {g:<20}   —  (not scored: --judge none)")
+                continue
+            unstable = sum(1 for v in vals if len({bool(x[g]) for x in v}) > 1)
+            print(f"  {g:<20} {unstable:>3}/{len(vals)} probes flipped verdict between draws")
+        # ragas is a judged FLOAT, so under --judge none every value is None and the old
+        # max()-min() raised TypeError HERE — after every reply had been generated and
+        # scored, so a completed 3-hour k=3 run died one line before writing its results.
+        # The sidecar survived it, but the run looked like a total loss. Never let the
+        # summary crash on data the run was legitimately not asked to collect.
+        rag = [v for v in by_msg.values() if all(x.get("ragas") is not None for x in v)]
+        if rag:
+            spreads = [max(x["ragas"] for x in v) - min(x["ragas"] for x in v) for v in rag]
+            print(f"  {'ragas':<20} mean within-probe spread {sum(spreads)/len(spreads):.3f}, "
+                  f"max {max(spreads):.3f}")
+        else:
+            print(f"  {'ragas':<20}   —  (not scored: --judge none)")
 
     # PERSIST EVERY MODE'S VERDICT, not just counseling's. The console has always printed
     # the segmented table, but only `counseling_deploy` was written to the file — so the
