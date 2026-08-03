@@ -21,10 +21,17 @@ from pathlib import Path
 from .six_gate import THRESHOLDS, _medical_instruction
 
 
+
+
 def rescore(detail: dict) -> dict:
     """Recompute the deterministic half of the gates; keep the stored judge verdicts."""
     d = dict(detail)
-    # `hallucination` came from api.verify against the live passages and is unchanged.
+    # `hallucination` is NOT re-derived here, and that is deliberate. Reconstructing the
+    # passages from the saved block gives citations but not full passage TEXT, and the
+    # creative §19 attribution check matches quoted lines against that text — so stubbed
+    # passages fail every creative probe. Attempting it dropped creative from a measured
+    # 1.000 to a fictional 0.667. A verifier fix must be confirmed on the specific replies
+    # (see api/tests/test_verify_chapter_verse.py) or by a fresh run, never by this path.
     no_medical = not _medical_instruction(d["reply"])
     is_emo_probe = d.get("probe_gate") == "emotional"
     # persona is None when the run used `--judge none`. An UNSCORED gate must not be
@@ -42,7 +49,13 @@ def decide(subset: list[dict], label: str) -> tuple[bool, dict]:
     print(f"\n## {label}  (n={len(subset)})")
     ok_all, scores = True, {}
     for g, thr in THRESHOLDS.items():
-        score = sum(float(x[g]) for x in subset) / len(subset)
+        # A gate the run never scored (--judge none) is unknown, not zero. Averaging None
+        # as 0 would report a clean run as a catastrophic failure.
+        vals = [x[g] for x in subset if x.get(g) is not None]
+        if not vals:
+            print(f"  {g:<20}   —    (not scored: --judge none)")
+            continue
+        score = sum(float(v) for v in vals) / len(vals)
         ok = score >= thr
         ok_all &= ok
         scores[g] = round(score, 4)

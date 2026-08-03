@@ -1,124 +1,132 @@
-# SatsangAI — AI + Application Layer
+# SatsangAI
 
-A warm **"saint" companion** that helps people with real, messy life problems through the
-wisdom of Hindu + Swaminarayan sacred texts — **problem-first, zero-hallucination,
-multilingual**. This repo is the AI + application layer; the knowledge base is a separate,
-finished project (`../satsangai`) that this repo consumes.
+A companion that answers real, messy life problems through Hindu and Swaminarayan
+scripture — **problem-first, multilingual, and grounded: every scriptural reference is
+verified against the corpus by code, never by another model.**
 
-> **Status (2026-06): V1 backend complete, rigorously evaluated, and deployable.** The KB is
-> enriched and live on HuggingFace; the FastAPI app + chat UI run end-to-end on CPU + Claude API.
-
----
-
-## What it does
-
-```
-safety classifier (deterministic, first; cannot be bypassed)
-  → understand + plan        (1 Claude Sonnet 4.6 JSON call: emotion, mode, search queries)
-  → retrieve                 (BGE-M3 query embed → tradition-filtered search over the
-                              enriched counseling core → cross-encoder rerank; no LLM)
-  → generate                 (Claude Sonnet 4.6, streaming, saint persona, grounded ONLY
-                              in retrieved passages, [P#] citation tags)
-  → verify citations         (deterministic: every [P#] maps to a real passage; no LLM)
-  → memory                   (short-term: full history; long-term: per-user facts with a
-                              HARD sensitive-data exclusion gate)
-```
-
-**Core principles:** problem-first (understand the human before scripture); zero
-hallucination (citations verified by DB lookup, never an LLM); saint persona (warm,
-patient, lovingly pushes back, never sycophantic); safety-first (deterministic crisis gate
-with verified helplines); tradition-aware (home = Swaminarayan/BAPS; never mix schools in
-counseling); memory with hard sensitive-data exclusion.
+This repo is the model and application layer. The corpus is a separate project:
+**[satsangAI_KB](https://github.com/aarsh-adhvaryu/satsangAI_KB)** — 228,121 chunks of
+Sanskrit, Gujarati, Hindi and English scripture.
 
 ---
 
-## Repo structure
+## What it is
 
-| Path | What |
+A **fine-tuned Gemma 4 26B MoE** (QLoRA SFT → DPO) serving a retrieval-grounded pipeline
+with deterministic safety and citation verification. It runs with **no commercial API at
+runtime** — planning, generation and verification are all local.
+
+```
+safety classifier          deterministic, runs FIRST, cannot be bypassed
+  ↓
+understand + plan          emotion (surface + underlying), mode, search queries
+  ↓
+retrieve                   BGE-M3 → tradition-filtered search → cross-encoder rerank
+  ↓
+generate                   tuned Gemma, streaming, grounded only in retrieved passages
+  ↓
+verify                     every [P#] resolved against the corpus — deterministic
+  ↓
+memory                     session history always; long-term facts behind a hard
+                           exclusion gate for self-harm / abuse / medical disclosures
+```
+
+Six response modes: **counseling · teaching · verse explanation · creative writing ·
+out-of-domain refusal · shastrarth** (parked — the corpus no longer holds the acharya
+schools it needs).
+
+---
+
+## Results
+
+Deploy gate — 99 adversarial probes × 3 independent draws (297 responses), deterministic
+gates, no API:
+
+| mode | n | hallucination | emotional |
+|---|---|---|---|
+| counseling | 123 | 1.000 | 1.000 |
+| teaching | 63 | 1.000 | 1.000 |
+| verse | 63 | 1.000 | 1.000 |
+| creative | 36 | 1.000 | 1.000 |
+| out_of_domain | 12 | 1.000 | 1.000 |
+
+**0 fabricated citations across 297 responses. 0/99 probes changed verdict between draws**
+— the result is reproducible rather than a favourable sample. Mode routing: 99/102.
+
+*Scope:* these are the correctness gates — citations, mode contracts, attribution,
+medical-instruction, routing. The judged quality gates (persona, sycophancy, RAGAS) were
+measured on the earlier Claude-backed pipeline, not on the shipped local model.
+
+---
+
+## Notable findings
+
+Three results that shaped the system, all reproducible from this repo:
+
+**Quantization silently does nothing on this architecture.** A "4-bit" checkpoint came out
+46 GB instead of ~13 GB. Reading tensor dtypes from the safetensors header showed 47.2 GB
+still bf16 against 1.14 GB quantized — **2.4% of weights**. `transformers` stores Gemma-4
+experts as fused 3-D parameter tensors, and bitsandbytes only replaces `nn.Linear`. The
+config was obeyed; it had almost nothing to act on.
+
+**The enrichment layer gave no measurable retrieval lift.** A blind A/B against the previous
+embeddings came out 5-5. BGE-M3 is strongly cross-lingual, so translation-level embeddings
+already matched English queries. Enrichment's real value is generation grounding, not
+retrieval — a conclusion that only survived because it was measured rather than assumed.
+
+**Single-sample evaluation was unusable.** Re-running identical probes moved hallucination
+±0.13 — larger than every treatment effect the project had measured. All deploy decisions
+now use k=3 sampling with per-mode segmentation.
+
+---
+
+## Run it
+
+```bash
+# local model, no API key required anywhere (GPU)
+bash serve.sh
+
+# the deploy gate, zero API cost
+python -m eval.six_gate --backend gemma --judge none --k 3 --out eval/run.json
+python -m eval.watch_gates --out eval/run.json --total 297 --fails
+
+# tests
+python -m api.tests.test_safety_memory
+python -m api.tests.test_verify_chapter_verse
+```
+
+Docker: `docker compose up --build` (CPU image, Claude backend). Postgres/pgvector behind
+the `postgres` profile.
+
+---
+
+## Stack
+
+Gemma 4 26B MoE · PEFT/QLoRA · TRL (SFT + DPO) · BGE-M3 · bge-reranker-v2-m3 ·
+FastAPI (SSE + WebSocket) · PostgreSQL/pgvector · Docker · Transformers
+
+## Layout
+
+| path | what |
 |---|---|
-| `config/counseling_core.yaml` | The curated 17,808-row "counseling core" (retrieval default + enrichment scope) |
-| `enrichment/` | The KB enrichment pipeline (DONE): gold seed → QLoRA-tuned Gemma 4 → enrich → embed → write back → push to HF |
-| `api/` | The V1 FastAPI backend (pipeline nodes, stores, web UI) |
-| `api/web/index.html` | Self-contained chat UI (no build step) |
-| `api/db/`, `api/pg.py`, `api/store.py` | Postgres (pgvector) backend, swappable via `SATSANG_STORE` |
-| `api/tests/` | Deterministic safety + memory-gate tests |
-| `eval/` | Evaluation harness (Opus-judge): response quality, drift, hallucination, topic-switch, retrieval-lift |
-| `docker-compose.yml` | pgvector Postgres for the `postgres` store |
+| `api/` | the serving pipeline — safety, routing, retrieval, generation, verification, memory |
+| `v2/` | the from-scratch model: pair generation, SFT, DPO, quantization, evaluation |
+| `enrichment/` | KB enrichment with a locally-tuned Gemma, and write-back |
+| `eval/` | the 6-gate deploy pipeline, probes, judges, rescoring |
+| `config/` | counseling-core manifest, helplines, emergency numbers |
 
-The **knowledge base** (231,940 rows, BGE-M3 embeddings, enrichment written back) lives in
-`../satsangai` and on HuggingFace `aarsh-adhvaryu/satsangai-kb` (private).
+Engineering notes, measured numbers and the failure log live in [CLAUDE.md](CLAUDE.md).
 
 ---
 
-## Quickstart
+## Safety
 
-```bash
-# 0. deps already installed in this Studio: transformers, sentence-transformers, anthropic,
-#    fastapi/uvicorn, psycopg[binary], pgvector
-export ANTHROPIC_API_KEY=...                 # lives in ~/.zshrc here: `source ~/.zshrc`
+Crisis detection is deterministic pattern matching that runs **before** any model call and
+cannot be bypassed, including method-seeking phrasing ("how many … to not wake up") that an
+intent-only classifier misses. Responses carry human-verified helplines (India verified;
+regional and diaspora entries ship inert until confirmed). Disclosures involving self-harm,
+abuse, trauma or medical conditions are never written to long-term memory — that gate applies
+to user edits too, not just to extraction.
 
-# 1. build the retrieval index from the enriched KB (once; ~seconds)
-python -m api.build_index
-
-# 2. run (in-memory stores — default)
-HF_HUB_OFFLINE=1 uvicorn api.main:app --host 0.0.0.0 --port 8000
-#    → open http://localhost:8000/  (chat UI),  POST /chat (SSE),  GET /health
-```
-
-### Postgres backend (production)
-```bash
-docker compose up -d
-SATSANG_DATABASE_URL=postgresql://postgres:satsang@localhost:5433/satsang python -m api.db.load_pg
-SATSANG_STORE=postgres SATSANG_DATABASE_URL=... uvicorn api.main:app --port 8000
-```
-
-### Config toggles (env)
-`SATSANG_STORE` (memory|postgres) · `SATSANG_RERANK=0` (off) · `SATSANG_FAITHFULNESS_GUARD=1`
-(non-streaming; revises unfaithful claims) · `SATSANG_EMBED_DEVICE=cuda` · `SATSANG_HELPLINES_VERIFIED`.
-
----
-
-## Evaluation
-
-```bash
-python -m api.tests.test_safety_memory                  # deterministic safety + memory gates
-HF_HUB_OFFLINE=1 python -m eval.run_eval                # response quality (Opus judge)
-HF_HUB_OFFLINE=1 python -m eval.topic_switch            # topic changes within a session
-HF_HUB_OFFLINE=1 python -m eval.retrieval_lift          # enriched vs old embeddings
-```
-
-| Dimension | Result |
-|---|---|
-| Drift / boundaries (not a therapist) | **5/5** (refuses diagnosis/prescription/therapy/legal) |
-| Crisis gate (deterministic) | **2/2** |
-| Hallucination / fabrication | **2/2** (no fake verses, no fabricated citations) |
-| Topic-switch in one session | **5/5** |
-| Response faithfulness / persona | **14/15** (residual ~7% is strict-judge noise on subtle paraphrase) |
-| Safety + memory unit tests | **all pass** (sensitive data never persisted) |
-| Retrieval-lift (enriched vs old) | tie — *honest finding: BGE-M3 cross-lingual strength means enrichment's value is in generation grounding, not retrieval vectors* |
-
----
-
-## Safety & privacy
-
-- **Crisis gate** (`api/safety.py`) is deterministic, runs first, biased to over-trigger;
-  returns a static, human-reviewed response with **verified India-core helplines**
-  (Tele-MANAS 14416, KIRAN, Vandrevala, Women 181, NCW, Childline 1098, 112) + a global
-  directory. Regional/diaspora lines still to be added.
-- **Long-term memory** never stores self-harm / abuse / trauma / medical / criminal
-  disclosures — a deterministic gate backstops the LLM fact-extractor (verified in tests
-  and on the Postgres backend).
-
----
-
-## Status & roadmap
-
-**Done:** KB enrichment (17,804/17,808, on HF) · V1 pipeline · rerank · multi-turn + memory ·
-faithfulness-check node · crisis safety (verified helplines) · chat UI · Postgres backend ·
-full eval suite.
-
-**Next:** app **Dockerfile** for one-command deploy · regional/diaspora helplines · frontend
-polish · **V2** — QLoRA + DPO generation model (Gemma 4, Claude-free, fed by V1 conversation
-data in Postgres).
-
-See `CLAUDE.md` for the detailed engineering notes, gotchas, and exact resume state.
+This is a companion for loneliness and life's difficulties. It is not a therapist, and it is
+built to say so.

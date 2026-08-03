@@ -1,61 +1,59 @@
 # SatsangAI — AI + Application Layer
 
-A warm "saint" companion that helps people with real, messy life problems through Hindu +
-Swaminarayan scripture — problem-first, zero-hallucination, multilingual.
+An AI companion that answers real life problems through Hindu and Swaminarayan scripture:
+problem-first, warm, and **grounded — every scriptural reference is checked against the
+corpus by code, not by another model.**
 
-GitHub: https://github.com/aarsh-adhvaryu/satsangAI
-Full spec: `../.data/data/data/SatsangAI_Final_Complete_Proposal.md` (Part I vision,
-Part II V2 from-scratch Gemma, Part III V1 Claude+RAG).
+This repo is the model + application layer. The corpus lives in
+[satsangAI_KB](https://github.com/aarsh-adhvaryu/satsangAI_KB) — consume it, don't recreate it.
 
-**The knowledge base is a separate, finished project — do NOT rebuild it here.**
-This repo consumes it and adds enrichment, retrieval, generation, memory, and the API.
+Rewritten 2026-08-03 against a full audit. Every number here was measured, not carried
+forward; where a claim is untested it says so.
 
 ---
 
-## ⏯️ STATUS (2026-07-27) — resume here
+## ⏯️ STATUS — resume here
 
-**The system runs end-to-end with NO Anthropic API.** Verified on an H100: 99 probes, no
-`ANTHROPIC_API_KEY` in the environment, routing 34/34, zero contract breaches.
+**V2 (the from-scratch Gemma) is the product and it passes its deploy gate.**
 
-Latest gate — `eval/six_gate_final.json`, deterministic gates only (`--judge none`):
+`eval/six_gate_gemma_k3.json` — 99 probes × 3 draws = 297, `--backend gemma --judge none`:
 
-| mode | n | hallucination | emotional | verdict |
-|---|---|---|---|---|
-| counseling | 41 | **1.000** | 1.000 | **PASS** |
-| verse | 12 | **1.000** | 1.000 | **PASS** |
-| creative | 12 | **1.000** | 1.000 | **PASS** (7 written + 5 guard refusals) |
-| out_of_domain | 4 | **1.000** | 1.000 | **PASS** |
-| teaching | 30 | 0.967 | 1.000 | 1 miss (verbatim-shloka bait) |
+| mode | n | hallucination | emotional |
+|---|---|---|---|
+| counseling | 123 | 1.000 | 1.000 |
+| teaching | 63 | 1.000 | 1.000 |
+| verse | 63 | 1.000 | 1.000 |
+| creative | 36 | 1.000 | 1.000 |
+| out_of_domain | 12 | 1.000 | 1.000 |
 
-Judged gates (persona / sycophancy / scripture / RAGAS) are **unscored** on this stack —
-they need an API judge. The last full judged run gave counseling 6/6 at k=3
-(`eval/six_gate_k3.json`): five gates at exactly 1.000, RAGAS 0.920.
+`deploy: true`, `failing_modes: []`, routing 99/102, and **0/99 probes flipped verdict
+between draws** — the result is reproducible, not a lucky sample.
 
-**Work is on branch `feat/modes-and-claude-free` (pushed, 2 commits ahead of main).**
+**What that does and does not prove.** `--judge none` scores only the deterministic gates:
+citations, mode contracts, §19 attribution, medical-instruction, routing. Persona,
+sycophancy, scripture_accuracy and RAGAS are **unscored** — they need the Opus judge and
+the owner's API credits are exhausted. So: correctness is proven at k=3; *quality* is not
+measured on the shipped model.
+
+**Serving:** bf16 on an H100 (~49 GB). `bash serve.sh`. Quantization is a dead end here —
+see the MoE finding below.
 
 ---
 
 ## 🚨 KNOWN ISSUES — read before deploying
 
-**Fixed 2026-07-27** (audit issues 1, 2, 3, 5): the crisis path now fails loudly
-(`safety.validate_configs()` loads every helpline file at startup and prints a banner —
-it previously swallowed all exceptions and silently dropped regional lines); country
-numbers have exactly one source; `SATSANG_COUNTRY`/`REGION` are declared in `config.py`;
-and the memory panel, consent prompt and feedback controls now exist in the UI.
-
-Still open:
-
-1. **Postgres breaks memory controls.** `PgMemoryStore` lacks `items/update/delete/clear`,
-   so those endpoints return 501 under `SATSANG_STORE=postgres`. Deploy with the memory
-   store, or add parity (~1h). Matters for any host with ephemeral disk.
-2. **Creative is safe but not good.** 1.000 is reached partly by refusing: ~42% of requests
-   return an apology instead of a poem. Prompting is exhausted (three attempts, all inside
-   noise) — lowering the refusal rate needs training data.
-3. **Verse trades helpfulness for verifiability.** For verses with no stored `word_meanings`
-   the guard strips the breakdown, even though Gemma's glosses were *correct*. Real fix is
-   backfilling `word_meanings` in the KB.
-4. **Helplines need a human spot-check** for the countries you actually expect users in.
-   India-core is human-verified; the other 31 came from an owner-supplied table.
+1. **Quantization does not work on this architecture.** bitsandbytes quantized 2.4% of the
+   weights. Do not retry it with bnb. Details below.
+2. **Quality gates are unmeasured on V2.** Everything judged (persona/sycophancy/RAGAS) was
+   scored on the Claude-backed V1, not on the Gemma model that ships.
+3. **§17 morphology has no KB storage**, so a grammar breakdown is always recalled, never
+   retrieved. Guarded (`verse.claims_grammar`), not solved.
+4. **Only 10.2% of the corpus is served** — 23,254 of 228,121 rows. The rest (mahabharata
+   73k, itihasa 92k, valmiki 21k) is unenriched and invisible to retrieval.
+5. **Shastrarth has zero data.** All four acharya traditions were removed from the KB as
+   uncitable page-scans. The mode cannot be enabled from this corpus at any config setting.
+6. **Helpline numbers** are human-verified for India only; regional/diaspora entries ship
+   `verified: false` and are inert until a human confirms them.
 
 ---
 
@@ -66,6 +64,8 @@ safety (deterministic, FIRST, cannot be bypassed)
   -> understand + plan          api/understand.py   (Claude OR Gemma via api/llm.py)
   -> domain gate                in_domain=false -> out_of_domain, no retrieval
   -> verse lookup               api/verse.py        (deterministic citation match)
+  -> named-source preference    api/verse.detect_sources
+  -> school grounding limit     api/schools.py
   -> creative detection         api/creative.py     (form + output language)
   -> retrieve                   api/retrieve.py     (BGE-M3 + tradition filter + rerank)
   -> generate                   api/generate.py     (persona per mode, [P#] grounded)
@@ -75,189 +75,167 @@ safety (deterministic, FIRST, cannot be bypassed)
 
 **Two shared entry points — do not bypass them.** `pipeline.prepare()` owns routing and
 retrieval; `pipeline.generate_reply()` owns every generation-time decision (creative guard,
-verse guard, faithfulness guard, streaming). The eval calls both.
-
-> This exists because the eval twice kept its own copy of a pipeline stage and so measured
-> code the product does not run — first routing (scored out_of_domain 0/12 and verse 0/15),
-> then generation (scored creative 0.417 with the §19 guard never executing). **Any new
-> pipeline step goes in one of those two functions.** The durable fix is `--backend http`
-> so the eval hits the running server and no second code path can exist.
+verse guards, faithfulness guard, streaming, `temperature`). The eval calls both. This rule
+exists because the eval twice kept a private copy of a pipeline stage and a whole run
+measured code the product does not execute.
 
 ### Modes
 
-| mode | routed by | retrieval | notes |
-|---|---|---|---|
-| `counseling` | planner (default) | enriched core, tradition-filtered | the shipped product |
-| `teaching` | planner | same as counseling | learners; NOT shastrarth |
-| `verse` | **deterministic** `verse.parse_reference` | verse pinned as `[P1]` | ~1,187 addressable verses |
-| `creative` | **deterministic** `creative.detect_form` | enriched core | §19 guard + refusal |
-| `out_of_domain` | planner `in_domain=false` | **none** | honest refusal, no scripture |
-| `shastrarth` | **user selection only** | all schools, unenriched | OFF by default, fails 2 gates |
-
----
-
-## Core principles (from the proposal)
-
-- **Problem-first, not scripture-first.**
-- **Zero hallucination** — every `[P#]` verified by deterministic DB lookup, never by an LLM.
-- **Saint persona** — warm, never lectures, pushes back lovingly (no sycophancy).
-- **Safety first** — deterministic crisis classifier runs BEFORE any LLM.
-- **Tradition-aware** — never mix schools in counseling; full breadth only in shastrarth.
-- **Memory with hard sensitive-data exclusion** — self-harm/abuse/trauma/medical/criminal
-  disclosures are NEVER written to long-term memory, including via user edits.
+`counseling` · `teaching` · `verse` · `creative` · `out_of_domain` · `shastrarth` (parked,
+no data). Routing is decided by `understand()` except verse and creative, which are
+detected deterministically.
 
 ---
 
 ## Run it
 
 ```bash
-# Claude backend (needs ANTHROPIC_API_KEY in ~/.zshrc; credits currently exhausted)
-source ~/.zshrc && HF_HUB_OFFLINE=1 uvicorn api.main:app --port 8000
+# V2 — the from-scratch Gemma, no API key needed anywhere (GPU, ~10 min cold load)
+bash serve.sh
 
-# Claude-FREE: everything on the local GPU, no API key at all (~4.5 min model load)
-env -u ANTHROPIC_API_KEY SATSANG_UTILITY_BACKEND=gemma SATSANG_GEN_BACKEND=gemma \
-  SATSANG_EMBED_DEVICE=cuda HF_HUB_OFFLINE=1 uvicorn api.main:app --port 8000
+# V1 — Claude backend (needs ANTHROPIC_API_KEY)
+uvicorn api.main:app --port 8000
 
-# deterministic gate, zero API cost (~65 min for 99 probes)
-env -u ANTHROPIC_API_KEY SATSANG_UTILITY_BACKEND=gemma SATSANG_GEN_BACKEND=gemma \
-  SATSANG_EMBED_DEVICE=cuda HF_HUB_OFFLINE=1 \
-  python -m eval.six_gate --backend claude --judge none --k 1 --out eval/run.json
+# deploy gate, deterministic only, zero API cost
+python -m eval.six_gate --backend gemma --judge none --k 3 --out eval/run.json
+python -m eval.watch_gates --out eval/run.json --total 297 --fails   # live progress
 
-python -m eval.rescore --in eval/run.json   # re-derive verdicts free after a detector fix
-python -m api.tests.test_safety_memory      # safety + memory + crisis regression
-python -m api.build_index                   # rebuild the retrieval index from the KB
+# rebuild the served index after any KB or config change
+python -m api.build_index
+
+# tests (pytest is NOT installed — run modules directly)
+python -m api.tests.test_safety_memory
+python -m api.tests.test_verse_grammar_guard
+python -m api.tests.test_verse_pipeline_guard
+python -m api.tests.test_named_source_and_schools
+python -m api.tests.test_verify_chapter_verse
 ```
+
+Long GPU jobs go through `run_deploy.sh` / `run_quant.sh` — detached under `nohup`,
+sequential (one 52 GB model at a time), every stage skipped if its output exists.
 
 ### Environment
 
 | var | default | meaning |
 |---|---|---|
-| `SATSANG_GEN_BACKEND` | `claude` | `gemma` = saint reply from the tuned adapter |
-| `SATSANG_UTILITY_BACKEND` | `claude` | `gemma` = plan + memory extraction local. **Both = no API** |
-| `SATSANG_UTILITY_MODEL` | `""` | empty reuses the generation model with the adapter disabled |
-| `SATSANG_GEMMA_ADAPTER` | `dpo2` | which V2 adapter serves |
-| `SATSANG_EMBED_DEVICE` | `cpu` | `cuda` — retrieval is the CPU bottleneck |
-| `SATSANG_SHASTRARTH` | `0` | `1` offers shastrarth as a user-selectable mode |
-| `SATSANG_STORE` | `memory` | `postgres` (breaks memory controls — see issue 4) |
-| `SATSANG_COUNTRY` | unset | ISO-2 code for country helplines (read in `safety.py`) |
-| `SATSANG_REGION` | unset | regional helpline block (read in `safety.py`) |
-| `SATSANG_RERANK` / `SATSANG_FAITHFULNESS_GUARD` | `1` / `0` | toggles |
-| `SATSANG_GEN_MODEL` / `SATSANG_PLAN_MODEL` | `claude-sonnet-4-6` | Claude model ids |
-| `SATSANG_EMBED_MODEL` / `SATSANG_RERANK_MODEL` | BGE-M3 / reranker | model ids |
-
-**GPU rule: ONE 52 GB model at a time on an 80 GB card.** `api/llm._require_free_vram()`
-fails in <1s with the fix rather than OOM-ing after a long load.
-
----
-
-## Deploy
-
-`Dockerfile` builds a self-contained image (8.7 GB; build context 188 MB). It copies
-`api/ config/ enrichment/ v2/` — **`v2/` is required on the Gemma path** (`api/generate`
-imports `v2.train_config`); omitting it crashed the container while working outside it.
-`v2/data/` (18 GB of adapters) is excluded and must be mounted:
-
-```bash
-docker run --gpus all -p 8000:8000 \
-  -e SATSANG_UTILITY_BACKEND=gemma -e SATSANG_GEN_BACKEND=gemma -e SATSANG_EMBED_DEVICE=cuda \
-  -v $PWD/v2/data/gemma4-v2-dpo2-lora:/app/v2/data/gemma4-v2-dpo2-lora:ro \
-  -v $HOME/.cache/huggingface:/models:ro  satsangai:modes
-```
-
-**Hosting:** the UI is a 17 KB file served by FastAPI at `/` — same-origin, no build step,
-no CORS. Do not split it onto Vercel. Options: Lightning Studio (GPU already paid for,
-£0 extra, best for collecting first conversations) · HF Spaces Docker SDK + external
-Postgres (ephemeral disk otherwise loses everything) · Railway/Fly + Claude (per §25).
-Always-on GPU for the 52 GB model is ~$1–2k/month; 4-bit (~26 GB) could change that but
-is **untested for serving**.
-
----
-
-## Knowledge base (consume, don't recreate)
-
-- HF dataset (PRIVATE): `aarsh-adhvaryu/satsangai-kb` — **231,940 records**, BGE-M3
-  embeddings on every row. KB repo: `../satsangai`.
-- **Counseling core = 17,794 rows**, 17,804 enriched (Gemma 4 26B MoE, QLoRA on Claude-Opus
-  gold, runtime Claude-free). Shastrarth adds 8,173 acharya-school rows (unenriched).
-- **Script reality** (measured, drives `api/verse.py`): `original` is Gujarati 8,466 /
-  **Latin 7,208** / Devanagari 1,476 / Kannada 643. Shikshapatri and Satsang Diksha ship
-  already-romanised. A hardcoded Devanagari transliteration silently no-ops.
-- **Coverage gaps**: transliteration 5.6%, `word_meanings` 3.9%, translation 13.9% —
-  `contextual_explanation` is 100% and is what makes counseling work.
-- **Verse-addressable only**: Gita (719, full word-by-word), Yoga Sutras (195), Vachanamrut
-  (273). Everything else is page-chunked and cannot resolve by verse number.
-
-### Corrections to the proposal (apply these)
-- Query embeddings MUST use BGE-M3, not Voyage/OpenAI — otherwise vectors don't align.
-- Default counseling retrieval = the curated core, not the full 231k (narrative floods it).
-- Enrichment engine = **local Gemma only**; Claude gold is offline-bootstrap only.
+| `SATSANG_GEN_BACKEND` | `claude` | `gemma` = the tuned adapter writes the reply |
+| `SATSANG_UTILITY_BACKEND` | `claude` | `gemma` = planning/extraction too; both gemma = Claude-free |
+| `SATSANG_GEMMA_ADAPTER` | `v2/data/gemma4-v2-dpo2-lora` | base + this LoRA |
+| `SATSANG_GEMMA_MODEL` | *(unset)* | a STANDALONE merged/quantized dir; overrides the adapter |
+| `SATSANG_SHASTRARTH` | off | offer shastrarth as a client-selectable mode |
+| `SATSANG_STORE` | `memory` | `postgres` for pgvector |
+| `SATSANG_RERANK` | on | cross-encoder reranking |
 
 ---
 
 ## V2 (the from-scratch model)
 
-**`v2/data/gemma4-v2-dpo2-lora` is final and shipped.** It won every blinded pairwise judge.
+Base **Gemma 4 26B MoE** (`google/gemma-4-26B-A4B-it`, 3.8B active/token) → QLoRA **SFT** →
+**DPO**. Shipped adapter: `v2/data/gemma4-v2-dpo2-lora`.
 
-Negative results worth not repeating:
-- **6-passage retrain LOST** to 1-passage dpo2 — more context diluted the reply.
-- **Bilingual retrain LOST** — dpo2 was *already* fluent Gujarati (gu_script 0.98, 0/11
-  answered in English). Root cause of the loss: `multilingual_pairs.py` said "be brief",
-  so Gujarati `chosen` averaged 548 chars vs English 1,299 — the model learned terseness,
-  and terseness reads as coldness (warmth 9-0 against it).
-- **Three data-engineering attempts have failed to beat dpo2.** Synthetic data has
-  plateaued. Only real user conversations will move it.
+* SFT: 447 steps / 3 epochs, train loss 3.14 → 0.815, eval 1.057 → 0.908.
+* DPO v1 was **invalid** — rewards/accuracies 1.0 from step 50, because `rejected` was the
+  chosen reply plus one of ~3 canned strings per flaw. The model learned "boilerplate = bad".
+* DPO v2 fixed it by sampling `rejected` **from the SFT model itself**
+  (`v2/onpolicy_negatives.py`): accuracies 0.41 → 0.98, a healthy curve.
+* Both DPO runs show `rewards/chosen` going negative (~−2.6) = likelihood displacement.
+  Safe here only because `api/verify` checks every `[P#]` deterministically regardless.
+
+**Three attempts to beat dpo2 all failed** — 6-passage contexts (lost 6-2 in blinded
+pairwise), naturalized problems, and a bilingual retrain (the premise was false: dpo2 was
+already fluent Gujarati, 0.98 script ratio, having never been trained on it). Synthetic data
+has plateaued. Only real user conversations will move it.
+
+### 🚨 Quantization: bitsandbytes cannot quantize this MoE
+
+The "4-bit" model came out **46 GB**, the "8-bit" **47 GB**, versus 49 GB bf16. Reading
+tensor dtypes from the safetensors header:
+
+```
+BF16   47.20 GB   <- untouched
+U8      1.14 GB   <- actually quantized   => 2.4% of weights
+```
+
+`transformers` stores Gemma-4 experts as **fused 3-D parameter tensors**
+(`layers.N.experts.gate_up_proj`, `.down_proj`), and bitsandbytes only replaces
+`nn.Linear`. It quantized the attention projections and left every expert in bf16.
+`load_in_4bit: True` was obeyed; it had almost nothing to act on. This also explains the
++6.92% perplexity — real damage to attention for ~zero memory saving.
+
+**The 4090 economics are unreachable on this path.** Revisiting needs MoE-aware
+quantization (AWQ/GPTQ, llm-compressor/compressed-tensors) *plus* verified support for
+fused experts. `awq` and `vllm` are not installed here.
+
+**`du -sh` the output of any quantization before measuring it.** A "4-bit" model the size
+of bf16 is quantization that did not happen.
 
 ---
 
-## What's left, by priority
+## Evaluation
 
-**Before deploying**
-1. ~~Frontend memory panel / consent / feedback~~ — DONE (5650a6f).
-2. ~~Crisis-path silent failure + helpline config overlap~~ — DONE (f040a62).
-3. Postgres parity for memory controls — or deploy with the memory store.
-4. Helpline spot-check for the countries you expect users in.
-5. Backend decision: Claude (per-conversation cost) vs Gemma (always-on GPU).
+`eval/six_gate.py` is the deploy gate (proposal §20.3). `--judge {opus,sonnet,none}`;
+`none` is deterministic-only at zero cost and is the default way to work.
 
-**After deploying — the actual milestone**
-6. Collect real conversations with consent + feedback. §29's flywheel; the only path past
-   the synthetic-data plateau.
-
-**Proposal features not built**
-- §5.5 daily wisdom (deferred — needs a scheduler and delivery channel)
-- §4.2/§12.3 audio ingestion (pravachan ASR, speaker ID, verse matching) — untouched
-- §4.3/§17 morphology (dhatu/case analysis, analogy engine) — untouched
-- §10 Gemma 4 E4B utility model — currently the 26B base with the adapter disabled, which
-  works; the E4B id was never confirmed or cached
-- §20.3 wants 200+ probes; we have 99
-- §21 CI/CD eval gate (GitHub Actions blocking on RAGAS drop) — no workflows exist
-- §21 vLLM serving — `v2/serve_vllm.py` exists, never run
-- §18 shastrarth — parked; fails hallucination 0.78 / scripture 0.83 because its 8,173
-  school rows are unenriched. Root cause measured; fix is enrichment, not prompting.
-
-**KB work (owner: last)** — `word_meanings` + transliteration backfill, shastrarth
-enrichment, per-verse cross-school alignment for real §18 comparison.
+* **Always `--k 3` for a decision.** Measured run-to-run noise on identical inputs:
+  hallucination ±0.13 — larger than every treatment effect this project has measured.
+* **Verdicts are segmented by mode and all of them are persisted.** A combined average once
+  read REJECT while counseling passed all six; conversely `counseling_deploy: true` once
+  masked verse, teaching, creative and out_of_domain all failing.
+* `--backend {env,claude,gemma}` genuinely selects the runtime. It used to be decorative —
+  parsed, defaulted to `claude`, never read — which is how a k=3 run was filed as a deploy
+  gate for a model it never touched.
+* Resume is **backend-scoped**: a gemma run will not reuse replies from a claude sidecar.
+* `eval/rescore.py` re-derives verdicts from saved replies when a deterministic detector
+  changes — free. It does **not** re-run `verify`, deliberately: reconstructing passages
+  from the saved block loses passage text, and `verify_creative` needs it (attempting it
+  reported creative 1.000 → 0.667, entirely fictional).
+* `v2/quant_eval.py` compares two models: completion-only perplexity on the real held-out
+  split, plus greedy divergence at temperature 0.
 
 ---
 
 ## Hard-won lessons
 
-- **Regex detectors are the #1 source of false eval signal here.** Four separate incidents
-  in one day: `take (an?|\d)` matched "just take a breath"; `dosage` matched inside a
-  refusal; `_PUSHBACK` missed "gentle" while passing on filler "honestly"; the verse gate
-  fired on its own honest disclaimer. **Always read the flagged text before believing a
-  gate.** Prefer sharing the product's own detector over writing a second one.
-- **Single-sample gate numbers are unreliable.** Measured run-to-run noise on identical
-  shastrarth inputs: hallucination ±0.13. Use `--k 3` for any real decision.
-- **Segment by mode.** A combined average once read REJECT while counseling passed all six.
+- **Regex detectors are the #1 source of false signal here — six incidents.** `take (an?|\d)`
+  matched "just take a breath"; `dosage` matched inside a refusal; `_PUSHBACK` missed
+  "gentle"; a verse gate fired on its own honest disclaimer; `advaita` matched inside
+  *shuddhadvaita*; `_LOOSE_REF` flagged "Bhagavad Gita, Chapter 2, Verse 20" as
+  unverified when that exact verse was in context. **Always read the flagged text first.**
+- **A saturated metric cannot detect a regression.** With every gate at 1.000 there is no
+  headroom; measuring quantization damage needed perplexity and divergence, not the gates.
+- **Measure the thing you think you are measuring.** Perplexity scored over the whole
+  sequence — 71.7% of which is prompt the model was trained (via `completion_only_loss`)
+  *not* to predict — gave ppl ~5200 and made 4-bit look 21% *better* than bf16. A confident,
+  plausible number pointing the wrong way is more dangerous than a crash.
+- **Guards teach evasion.** Blocked from a "word-by-word" heading, the model produced the
+  same fabricated glosses under "Breaking Down the Three Key Words". Detect the *shape* of
+  the thing, not its label.
+- **An id list cannot survive a re-chunk.** 8 of 14 hand-listed exclusions silently unbound,
+  putting a conference title page back into the served index. Exclusions are rules now.
 - **Live probes beat unit tests** for this system — the crisis method-seeking gap
   ("how many paracetamol…") and both pipeline-drift bugs were found by running real turns.
+- **CPU tests cannot catch runtime-only failures**: a `NameError` on an unexercised path, or
+  two 52 GB models not fitting on one 80 GB card. Exercise the caller, not just the helper.
 - **Prompting has limits.** Three creative-persona revisions all landed inside noise; a
   deterministic guard fixed it in one attempt.
 
 ## Environment gotchas
 
-- GPU: H100 80 GB (Hopper `grouped_mm`) — Blackwell needs `experts_implementation="eager"`.
-- `ANTHROPIC_API_KEY` lives in `~/.zshrc`; non-interactive shells don't source it, so prefix
-  with `source ~/.zshrc 2>/dev/null;`. **Credits are currently exhausted.**
-- Lightning terminals run inside `screen` — jobs survive a disconnected laptop.
+- GPU: H100 80 GB (Hopper `grouped_mm`). Blackwell needs `experts_implementation="eager"`.
+- **One 52 GB model at a time.** A second load wedges for ~10 min then dies.
+- Cold weight load from Lightning network storage: **~10–12 min**; warm ~9 s.
+- `ANTHROPIC_API_KEY` lives in `~/.zshrc`; non-interactive shells don't source it — prefix
+  with `source ~/.zshrc 2>/dev/null;`. **Credits are exhausted.**
 - `pytest` is not installed; run test modules directly.
+- Foreground jobs through `| tee` die silently on terminal disconnect — use the run scripts.
+
+## What's left, by priority
+
+1. **Ship bf16.** It passes. Stop optimising it.
+2. **Morphology from a grammar engine** (Vidyut / sanskrit_parser / Heritage / DCS) — not
+   from the LLM. 30,859 corpus rows already carry `word_meanings` to validate against.
+3. **Smaller-model experiment** — the RAG carries the knowledge; the tuned model supplies
+   persona and grounding. A smaller *dense* model also quantizes normally.
+4. **Judged quality gates on V2** when API budget allows.
+5. **Serve it to real users** — the only source of preference data that will beat dpo2.
+6. Knowledge graph (§12.1) last: the bottleneck is coverage and morphology, not linking.

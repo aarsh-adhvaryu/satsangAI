@@ -1,0 +1,7 @@
+{
+ "model": "bf16+adapter",
+ "n_pairs": 99,
+ "tokens": 29615,
+ "mean_nll": 0.9608065787388951,
+ "perplexity": 2.6138038616201045
+}

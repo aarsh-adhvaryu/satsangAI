@@ -20,9 +20,27 @@ _LOOSE_REF = re.compile(
     r"(\d+(?:\s*[.:\-]\s*\d+)*)", re.I)
 
 
+# People — and models — write a reference two ways: "Gita 2.20" and "Bhagavad Gita,
+# Chapter 2, Verse 20". _LOOSE_REF only understands the first, so the second parsed as
+# "Bhagavad Gita, Chapter 2" and was flagged as UNVERIFIED even when the passage for
+# 2.20 was right there in context. That is a false accusation of hallucination against a
+# correct citation, and it fires in PRODUCTION, not just in the eval — the user sees a
+# grounding warning on a right answer. Found 2026-08-03 when the 4-bit model phrased the
+# same correct verse the long way and "failed" a gate the bf16 model passed 3/3.
+_CHAPTER_VERSE = re.compile(
+    r"\bchapter\s*(\d+)\s*[,;]?\s*(?:verse|shloka|sloka|sutra)\s*(\d+)", re.I)
+
+
+def _expand_prose_refs(text: str) -> str:
+    """Rewrite 'Chapter 2, Verse 20' as '2.20' so both spellings match the same citation."""
+    return _CHAPTER_VERSE.sub(r"\1.\2", str(text or ""))
+
+
 def _norm_ref(s: str) -> str:
     """Canonical form for comparing a written reference to a KB citation."""
     s = re.sub(r"\s+", " ", str(s or "").lower()).strip()
+    s = s.replace(",", " ")                       # "gita, 2.20" -> "gita 2.20"
+    s = re.sub(r"\s+", " ", s).strip()
     s = re.sub(r"\s*[.:\-]\s*", ".", s)
     return re.sub(r"\bbhagavad gita\b|\bgita\b", "gita", s)
 
@@ -43,7 +61,7 @@ def verify(text: str, passages: list[Passage]) -> dict:
     # Anything outside the retrieved set still flags: that is the model drawing on
     # parametric memory, which is exactly what this check exists to catch.
     in_context = {_norm_ref(p.citation) for p in passages}
-    untagged = _TAG.sub(" ", text)
+    untagged = _expand_prose_refs(_TAG.sub(" ", text))
     flagged = []
     for m in _LOOSE_REF.finditer(untagged):
         written = _norm_ref(m.group(0))
