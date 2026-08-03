@@ -23,9 +23,20 @@ micro-batch to actually fill the card (bf16 base leaves plenty of headroom).
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-MODEL = "google/gemma-4-26B-A4B-it"
+# The base is overridable so a smaller model can be trained and evaluated with the SAME
+# pairs, trainers and gates. Every consumer reads this one constant — sft_train, dpo_train,
+# onpolicy_negatives and api.generate's serving loader — so one env var switches all of them.
+#
+# Why it matters: the 26B is an MoE (enable_moe_block=True, 128 experts, top-8) whose experts
+# are stored as FUSED 3-D tensors, which bitsandbytes cannot quantize — it managed 2.4% of
+# the weights and the "4-bit" model came out 46 GB. google/gemma-4-12B-it is DENSE
+# (enable_moe_block=False), 23.9 GB, and quantizes normally to ~6-7 GB. It is also deeper
+# and wider than the MoE (48 layers / 3840 hidden vs 30 / 2816), so for a job where the RAG
+# supplies knowledge and the model supplies persona and grounding, it is not obviously worse.
+MODEL = os.environ.get("SATSANG_BASE_MODEL", "google/gemma-4-26B-A4B-it")
 DATA = Path(__file__).resolve().parent / "data"
 PAIRS = DATA / "pairs.jsonl"                 # produced by v2/build_pairs.py
 SFT_OUT = DATA / "gemma4-v2-sft-lora"
@@ -59,7 +70,12 @@ def detect_gpu() -> dict:
             "vram_gb": round(props.total_memory / 1e9, 1)}
 
 
-BF16_WEIGHTS_GB = 52.0          # ~26B params x 2 bytes
+# Preflight budget for the VRAM check. Scales with the base so a 12B run is not refused
+# for failing to find 52 GB free, and a 26B run is still protected.
+_WEIGHTS_GB = {"google/gemma-4-26B-A4B-it": 52.0, "google/gemma-4-12B-it": 24.0,
+               "google/gemma-4-E4B-it": 16.0, "google/gemma-4-E2B-it": 10.5}
+BF16_WEIGHTS_GB = float(os.environ.get("SATSANG_BF16_WEIGHTS_GB",
+                                       _WEIGHTS_GB.get(MODEL, 52.0)))
 
 
 def tune_runtime(require_free_gb: float | None = BF16_WEIGHTS_GB) -> dict:
