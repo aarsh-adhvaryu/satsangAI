@@ -104,7 +104,7 @@ fi
 
 # 2. QUANTIZE. bnb/nf4: awq and vllm are not installed here, and bnb answers the only
 #    question that matters first — does quality survive at all.
-if [ -e "$QUANT" ]; then
+if [ -f "$QUANT/config.json" ] && ls "$QUANT"/*.safetensors >/dev/null 2>&1; then
   say "stage 2 quantize: already done — skipping"
 else
   echo "2 quantize" > "$STATE"; wait_for_gpu || exit 1

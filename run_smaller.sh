@@ -42,6 +42,15 @@ LOG=eval/smaller_${TAG}.log
 STATE=eval/.smaller_step_${TAG}
 
 say() { echo "[$(date +%F' '%H:%M:%S)] $*"; }
+
+# A stage is DONE only if its completion marker exists — never merely its directory.
+# `[ -e dir ]` is true for a directory a crashed trainer created and never filled: the
+# 12B run skipped SFT on an empty output dir, then died in on-policy sampling with
+# "Can't find 'adapter_config.json'". Same shape as trusting a quantized artifact
+# without checking that it shrank.
+have_adapter() { [ -f "$1/adapter_config.json" ] && [ -f "$1/adapter_model.safetensors" ]; }
+have_model()   { [ -f "$1/config.json" ] && ls "$1"/*.safetensors >/dev/null 2>&1; }
+have_file()    { [ -s "$1" ]; }
 gpu_used() { nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null || echo 0; }
 wait_for_gpu() {
   local t=0
@@ -75,7 +84,10 @@ if [ "${1:-run}" = "status" ]; then
   for a in "$SFT:1 sft" "$ONPOLICY:2 on-policy negatives" "$DPO:3 dpo" "$GATE:4 gate (bf16)" \
            "$MEASURE:5 replies+ppl" "$MERGED:6 merged" "$QUANT:7 quantized" "$QGATE:8 gate (4bit)"; do
     p="${a%%:*}"; n="${a##*:}"
-    [ -e "$p" ] && echo "  [done]    $n" || echo "  [pending] $n"
+    if [ -d "$p" ]; then
+      { have_adapter "$p" || have_model "$p"; } && echo "  [done]    $n" || echo "  [PARTIAL] $n  <- incomplete, will retrain"
+    elif have_file "$p"; then echo "  [done]    $n"
+    else echo "  [pending] $n"; fi
   done
   echo
   [ -f "$LOG" ] && tr '\r' '\n' < "$LOG" | grep -v 'Loading weights\|it/s\]' | tail -14 \
@@ -120,7 +132,7 @@ PY
 [ $? -ne 0 ] && { say "stage 0 FAILED — download"; exit 1; }
 
 # 1. SFT on the SAME pairs the 26B trained on.
-if [ -e "$SFT" ]; then say "stage 1 sft: already done — skipping"; else
+if have_adapter "$SFT"; then say "stage 1 sft: already done — skipping"; else
   echo "1 sft" > "$STATE"; wait_for_gpu || exit 1
   say "stage 1/8 SFT (3 epochs, same 4,999 pairs)"
   python -m v2.sft_train --data "$PAIRS" --epochs 3 --bs 4 --ga 8 --out "$SFT"
@@ -129,7 +141,7 @@ fi
 
 # 2. On-policy negatives sampled from THIS model — the fix that made DPO real on the 26B.
 #    Canned negatives taught it "boilerplate = bad" and rewards hit 1.0 by step 50.
-if [ -e "$ONPOLICY" ]; then say "stage 2 on-policy: already done — skipping"; else
+if have_file "$ONPOLICY"; then say "stage 2 on-policy: already done — skipping"; else
   echo "2 onpolicy" > "$STATE"; wait_for_gpu || exit 1
   say "stage 2/8 on-policy negatives from the SFT model"
   python -m v2.onpolicy_negatives --in "$PAIRS" --sft "$SFT" --out "$ONPOLICY" --batch 16
@@ -137,7 +149,7 @@ if [ -e "$ONPOLICY" ]; then say "stage 2 on-policy: already done — skipping"; 
 fi
 
 # 3. DPO — conservative, 1 epoch; it overfits fast.
-if [ -e "$DPO" ]; then say "stage 3 dpo: already done — skipping"; else
+if have_adapter "$DPO"; then say "stage 3 dpo: already done — skipping"; else
   echo "3 dpo" > "$STATE"; wait_for_gpu || exit 1
   say "stage 3/8 DPO"
   python -m v2.dpo_train --data "$ONPOLICY" --sft "$SFT" --bs 2 --ga 8 --out "$DPO"
@@ -145,7 +157,7 @@ if [ -e "$DPO" ]; then say "stage 3 dpo: already done — skipping"; else
 fi
 
 # 4. The same 99-probe gate the 26B passed. k=1 first: if it fails here, k=3 is wasted.
-if [ -e "$GATE" ]; then say "stage 4 gate: already done — skipping"; else
+if have_file "$GATE"; then say "stage 4 gate: already done — skipping"; else
   echo "4 gate" > "$STATE"; wait_for_gpu || exit 1
   say "stage 4/8 deploy gate, bf16, k=1"
   SATSANG_GEMMA_ADAPTER="$PWD/$DPO" python -m eval.six_gate --backend gemma --judge none \
@@ -155,7 +167,7 @@ fi
 
 # 5. Perplexity + greedy replies on the SAME held-out split as the 26B, so quality is
 #    comparable without a judge (API credits are exhausted). 26B bf16 = 2.6138.
-if [ -e "$MEASURE" ] && [ -e "$MEASURE_PPL" ]; then
+if have_file "$MEASURE" && have_file "$MEASURE_PPL"; then
   say "stage 5 measure: already done — skipping"; else
   echo "5 measure" > "$STATE"; wait_for_gpu || exit 1
   say "stage 5/8 greedy replies + completion-only perplexity (26B bf16 baseline = 2.6138)"
@@ -164,23 +176,27 @@ if [ -e "$MEASURE" ] && [ -e "$MEASURE_PPL" ]; then
 fi
 
 # 6-8. Only worth doing if the model is actually good. Quantize, PROVE IT SHRANK, re-gate.
-if [ -e "$MERGED" ]; then say "stage 6 merge: already done — skipping"; else
+if have_model "$MERGED"; then say "stage 6 merge: already done — skipping"; else
   echo "6 merge" > "$STATE"; wait_for_gpu || exit 1
   say "stage 6/8 merge adapter into the base"
   python -m v2.serve_vllm merge --adapter "$DPO" --out "$MERGED"
   rc=$?; [ $rc -ne 0 ] && { say "stage 6 FAILED rc=$rc"; rm -rf "$MERGED"; exit $rc; }
 fi
 
-if [ -e "$QUANT" ]; then say "stage 7 quantize: already done — skipping"; else
+if have_model "$QUANT"; then say "stage 7 quantize: already done — skipping"; else
   echo "7 quantize" > "$STATE"; wait_for_gpu || exit 1
   say "stage 7/8 quantize to 4-bit (DENSE model — this should actually work)"
   python -m v2.quantize --model "$MERGED" --out "$QUANT" --method bnb --bits 4
   rc=$?; [ $rc -ne 0 ] && { say "stage 7 FAILED rc=$rc"; rm -rf "$QUANT"; exit $rc; }
   # THE CHECK THAT WAS MISSING LAST TIME.
   check_shrank "$QUANT" 15 || { say "stage 7 produced a non-quantized artifact — stopping"; exit 1; }
+  # The merged bf16 copy exists only to be quantized. Drop it now: it is ~24 GB, it is
+  # regenerable from base+adapter in minutes, and storage is the binding constraint.
+  say "removing $MERGED (~24 GB) — its only purpose was this quantization"
+  rm -rf "$MERGED"
 fi
 
-if [ -e "$QGATE" ]; then say "stage 8 4bit gate: already done — skipping"; else
+if have_file "$QGATE"; then say "stage 8 4bit gate: already done — skipping"; else
   echo "8 4bit-gate" > "$STATE"; wait_for_gpu || exit 1
   say "stage 8/8 gate the QUANTIZED model — the one that would actually ship"
   SATSANG_GEMMA_MODEL="$PWD/$QUANT" python -m eval.six_gate --backend gemma --judge none \

@@ -119,7 +119,7 @@ else
 fi
 
 # STEP 2 — merge the LoRA into the base so there is one standalone artifact.
-if [ -e "$MERGED" ]; then
+if [ -f "$MERGED/config.json" ] && ls "$MERGED"/*.safetensors >/dev/null 2>&1; then
   say "step 2 merge: already done ($MERGED) — skipping"
 else
   echo "2 merge" > "$STATE"
@@ -133,7 +133,7 @@ fi
 
 # STEP 3 — quantize to 4-bit. `bnb` not `awq`: awq and vllm are NOT installed in this
 # environment, and bnb answers the only question that matters first — does quality hold.
-if [ -e "$QUANT" ]; then
+if [ -f "$QUANT/config.json" ] && ls "$QUANT"/*.safetensors >/dev/null 2>&1; then
   say "step 3 quantize: already done ($QUANT) — skipping"
 else
   echo "3 quantize" > "$STATE"
