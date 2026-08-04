@@ -42,7 +42,13 @@ def _norm_ref(s: str) -> str:
     s = s.replace(",", " ")                       # "gita, 2.20" -> "gita 2.20"
     s = re.sub(r"\s+", " ", s).strip()
     s = re.sub(r"\s*[.:\-]\s*", ".", s)
-    return re.sub(r"\bbhagavad gita\b|\bgita\b", "gita", s)
+    s = re.sub(r"\bbhagavad gita\b|\bgita\b", "gita", s)
+    # Singular/plural: the KB cites "Yoga Sutras 1.3" but "Yoga Sutra 1.3" is the more
+    # natural English for ONE sutra, and prefix matching accepts neither as the other.
+    # Measured 2026-08-04: the 12B wrote the singular and had two correct, in-context
+    # citations flagged as hallucinations — in production a user would see a grounding
+    # warning on a right answer. Fold the plural away on both sides.
+    return re.sub(r"\b(sutra|upanishad|veda|purana)s\b", r"\1", s)
 
 
 def verify(text: str, passages: list[Passage]) -> dict:

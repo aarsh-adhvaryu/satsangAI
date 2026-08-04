@@ -29,6 +29,9 @@ _ROW = {"id": "bhagavad_gita_2.20", "source": "bhagavad_gita",
 # The verse IS in context — every spelling must verify.
 MUST_PASS = [
     "Bhagavad Gita 2.20",
+    # Singular/plural: the KB cites "Yoga Sutras 1.3" but "Yoga Sutra 1.3" is the natural
+    # English for ONE sutra. Prefix matching accepted neither as the other, so the 12B's
+    # correct in-context citations were flagged as hallucinations (2026-08-04).
     "Bhagavad Gita, Chapter 2, Verse 20",
     "Bhagavad Gita Chapter 2 Verse 20",
     "bhagavad gita chapter 2, verse 20",
@@ -65,6 +68,22 @@ def main() -> None:
     if not verify(real, psg)["all_ok"]:
         fails.append("FALSE POSITIVE on the actual 4-bit reply that triggered this fix")
 
+    # Singular/plural, on a Yoga Sutras fixture. The KB cites the plural; a person (and
+    # the 12B) writes the singular for one sutra. Both must resolve; a DIFFERENT sutra
+    # must still flag.
+    ys = {"id": "yoga_sutras_1.3", "source": "yoga_sutras", "citation": "Yoga Sutras 1.3",
+          "original": "तदा द्रष्टुः", "translation": "Then the seer abides.",
+          "word_meanings": "", "contextual_explanation": "x",
+          "tradition": "shared_hindu", "text_type": "verse"}
+    yp = [Passage.from_row(ys, 1.0)]
+    for form in ("Yoga Sutras 1.3", "Yoga Sutra 1.3", "yoga sutra 1.3"):
+        if not verify(f"See **{form}** [P1]", yp)["all_ok"]:
+            fails.append(f"SINGULAR/PLURAL false positive: {form!r}")
+    for form in ("Yoga Sutra 2.29", "Yoga Sutras 1.14"):
+        if verify(f"See **{form}** [P1]", yp)["all_ok"]:
+            fails.append(f"SINGULAR/PLURAL missed an out-of-context ref: {form!r}")
+
+    print("singular/plural  5/5")
     print(f"must-pass  {len(MUST_PASS)}/{len(MUST_PASS)}")
     print(f"must-flag  {len(MUST_FLAG)}/{len(MUST_FLAG)}")
     if fails:
